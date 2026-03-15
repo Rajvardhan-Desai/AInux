@@ -1,11 +1,6 @@
-# AInux — AI-Native Linux Environment
+## AInux AI-Native Linux Environment
 
 AInux is an LLM-augmented Linux shell that lets you interact with your system using natural language. It integrates a local LLM runtime, a persistent vector memory layer, an MDP-based safety framework, and autonomous agents capable of multi-step system administration tasks.
-
-This is the implementation accompanying the paper:
-
-> **AInux: An LLM-Augmented AI-Native Linux Environment for Natural Language System Interaction**  
-> Vishwakarma Institute of Technology, Pune
 
 ---
 

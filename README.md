@@ -151,3 +151,28 @@ Every command and plan is validated before execution using the MDP safety framew
 Plan safety = product of individual command scores. Plans scoring below 0.5 require confirmation.
 
 ---
+
+## Evaluation
+
+The `eval/` directory contains a full automated evaluation suite comparing AInux against two baselines:
+
+| System | Description |
+|---|---|
+| Traditional CLI | Ground-truth commands typed directly |
+| NaSh baseline | LLM shell with pattern-based safety, no memory/agents |
+| AInux (ours) | Full system: LLM + FAISS memory + MDP safety + agents |
+
+**60 standardised tasks** across 5 categories with ground-truth commands and automated correctness verification. Statistical analysis uses Wilcoxon signed-rank tests with Cohen's d effect sizes and 95% bootstrap confidence intervals.
+
+```bash
+cd eval
+pip install -r requirements_eval.txt
+
+# Run all 60 tasks against all 3 systems
+python eval_harness.py
+
+# Statistical analysis + figures
+python eval_stats.py --results results.json --outdir ../figures/
+```
+
+See [`eval/README.md`](eval/README.md) for full details.

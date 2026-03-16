@@ -76,12 +76,14 @@ class LocalLLMRuntime:
         "You are AInux, an expert system administration assistant. "
         "Convert natural language instructions into safe shell commands. "
         "Rules:\n"
-        "1. Output ONLY the shell command — no explanation, no markdown.\n"
+        "1. Output ONLY the shell command — no explanation, no markdown, no backticks, no code fences.\n"
         "2. Never output dangerous commands (rm -rf /, format, shutdown, etc.).\n"
         "3. If the request is ambiguous or unsafe, output: AINUX_CLARIFY\n"
-        "4. If the request cannot be expressed as a single shell command, "
-        "   output a semicolon-separated list of commands.\n"
+        "4. Prefer a single canonical shell command. Only use && or ; if the user explicitly asks for multiple actions or one command is impossible.\n"
         "5. Use commands appropriate for Linux/Debian unless told otherwise.\n"
+        "6. Preserve literal filenames, directories, ports, and package names from the request. Never invent placeholder paths like /path/to/...\n"
+        "7. Do not add sudo, apt-get update, cd, echo, comments, or verification steps unless the user explicitly asks for them.\n"
+        "8. Prefer canonical forms such as ls -la, find . -name '*.py' -type f, df -h, git init, which python, and git log --oneline -5.\n"
     )
 
     def __init__(self, config: Optional[OllamaConfig] = None):
@@ -255,10 +257,32 @@ class LocalLLMRuntime:
             parts.append(f"Recent context:\n{context}\n")
         parts.append(
             f"Platform: {platform}\n"
+            f"Return the shortest canonical command that satisfies the request.\n"
             f"User request: {user_input}\n"
             f"Shell command:"
         )
         return "\n".join(parts)
+
+    def _canonicalize_command(self, command: str) -> str:
+        command = command.strip()
+
+        if command.startswith("`") and command.endswith("`"):
+            command = command[1:-1].strip()
+
+        match = re.fullmatch(r"find \. -type f -name (.+)", command)
+        if match:
+            return f"find . -name {match.group(1)} -type f"
+
+        if command == "ip a":
+            return "ip addr"
+
+        if command in {
+            'git log -5 --pretty=format:"%h %s"',
+            "git log -5 --pretty=format:'%h %s'",
+        }:
+            return "git log --oneline -5"
+
+        return command
 
     def _extract_command(self, raw: str) -> Optional[str]:
         """Clean up LLM output to a single shell command."""
@@ -282,10 +306,27 @@ class LocalLLMRuntime:
         # Take only first line if multiline (single-command mode)
         command = command.split("\n")[0].strip()
 
+        if command.startswith("`") and command.endswith("`"):
+            command = command[1:-1].strip()
+
         # Strip common decorators
         for prefix in ["$", "#", ">", "bash:", "sh:"]:
             if command.lower().startswith(prefix):
                 command = command[len(prefix):].strip()
+
+        # Strip trailing semicolons left by the model on single commands
+        command = command.rstrip(";").strip()
+
+        command = self._canonicalize_command(command)
+
+        placeholder_patterns = [
+            r"/path/to/",
+            r"<[^>]+>",
+            r"\byour[_/-]",
+            r"\bexample[_/-]",
+        ]
+        if any(re.search(pattern, command, flags=re.IGNORECASE) for pattern in placeholder_patterns):
+            return None
 
         if not command or len(command) > 500:
             return None

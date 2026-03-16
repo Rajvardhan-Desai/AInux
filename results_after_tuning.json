@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "timestamp": "2026-03-16T16:29:15.314602",
+    "timestamp": "2026-03-16T16:12:26.895856",
     "n_tasks": 60,
     "n_results": 180
   },
@@ -16,7 +16,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.061,
+      "latency": 0.04,
       "executed": true
     },
     {
@@ -25,12 +25,12 @@
       "category": "T1",
       "complexity": "simple",
       "nl_input": "List all files in the current directory with details",
-      "generated": "ls -l",
+      "generated": "ls -la",
       "correct": true,
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 1.623,
+      "latency": 30.051,
       "executed": true
     },
     {
@@ -44,7 +44,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.983,
+      "latency": 45.229,
       "executed": true
     },
     {
@@ -58,7 +58,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.02,
+      "latency": 0.017,
       "executed": true
     },
     {
@@ -72,7 +72,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 2.712,
+      "latency": 2.871,
       "executed": true
     },
     {
@@ -86,7 +86,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.834,
+      "latency": 3.876,
       "executed": true
     },
     {
@@ -100,7 +100,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.033,
+      "latency": 0.027,
       "executed": true
     },
     {
@@ -114,7 +114,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.398,
+      "latency": 3.273,
       "executed": true
     },
     {
@@ -128,7 +128,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.3,
+      "latency": 4.29,
       "executed": true
     },
     {
@@ -142,7 +142,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.016,
+      "latency": 0.021,
       "executed": true
     },
     {
@@ -156,7 +156,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 2.335,
+      "latency": 2.254,
       "executed": true
     },
     {
@@ -170,7 +170,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.357,
+      "latency": 5.396,
       "executed": true
     },
     {
@@ -184,7 +184,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.037,
+      "latency": 0.041,
       "executed": true
     },
     {
@@ -198,7 +198,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 1.771,
+      "latency": 1.656,
       "executed": true
     },
     {
@@ -212,7 +212,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.894,
+      "latency": 4.729,
       "executed": true
     },
     {
@@ -226,7 +226,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.073,
+      "latency": 0.018,
       "executed": true
     },
     {
@@ -240,7 +240,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.308,
+      "latency": 3.634,
       "executed": true
     },
     {
@@ -254,7 +254,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.853,
+      "latency": 4.173,
       "executed": true
     },
     {
@@ -268,7 +268,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.222,
+      "latency": 0.035,
       "executed": true
     },
     {
@@ -282,7 +282,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 7.145,
+      "latency": 5.603,
       "executed": true
     },
     {
@@ -296,7 +296,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 6.601,
+      "latency": 5.347,
       "executed": true
     },
     {
@@ -310,7 +310,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.095,
+      "latency": 0.032,
       "executed": true
     },
     {
@@ -324,7 +324,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.967,
+      "latency": 2.329,
       "executed": true
     },
     {
@@ -338,7 +338,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 6.073,
+      "latency": 5.41,
       "executed": true
     },
     {
@@ -352,7 +352,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.104,
+      "latency": 0.043,
       "executed": true
     },
     {
@@ -366,7 +366,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.691,
+      "latency": 2.505,
       "executed": true
     },
     {
@@ -380,7 +380,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 7.024,
+      "latency": 6.314,
       "executed": true
     },
     {
@@ -408,7 +408,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.042,
+      "latency": 2.06,
       "executed": false
     },
     {
@@ -422,7 +422,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.445,
+      "latency": 5.031,
       "executed": false
     },
     {
@@ -450,7 +450,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 1.894,
+      "latency": 1.632,
       "executed": false
     },
     {
@@ -464,7 +464,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.899,
+      "latency": 5.776,
       "executed": false
     },
     {
@@ -478,7 +478,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.018,
+      "latency": 0.016,
       "executed": true
     },
     {
@@ -492,7 +492,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 1.806,
+      "latency": 1.429,
       "executed": true
     },
     {
@@ -506,7 +506,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.334,
+      "latency": 4.303,
       "executed": true
     },
     {
@@ -534,7 +534,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.732,
+      "latency": 3.941,
       "executed": false
     },
     {
@@ -548,7 +548,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.177,
+      "latency": 4.174,
       "executed": false
     },
     {
@@ -576,7 +576,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.923,
+      "latency": 3.871,
       "executed": false
     },
     {
@@ -618,7 +618,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 2.966,
+      "latency": 2.975,
       "executed": false
     },
     {
@@ -632,7 +632,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.695,
+      "latency": 4.748,
       "executed": false
     },
     {
@@ -646,7 +646,7 @@
       "success": true,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.887,
+      "latency": 1.629,
       "executed": true
     },
     {
@@ -660,7 +660,7 @@
       "success": true,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.671,
+      "latency": 4.008,
       "executed": true
     },
     {
@@ -674,7 +674,7 @@
       "success": true,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.533,
+      "latency": 5.368,
       "executed": true
     },
     {
@@ -688,7 +688,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.021,
+      "latency": 0.027,
       "executed": true
     },
     {
@@ -702,7 +702,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.564,
+      "latency": 3.555,
       "executed": true
     },
     {
@@ -716,7 +716,7 @@
       "success": true,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.117,
+      "latency": 4.232,
       "executed": true
     },
     {
@@ -744,7 +744,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.421,
+      "latency": 3.566,
       "executed": false
     },
     {
@@ -758,7 +758,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.163,
+      "latency": 4.182,
       "executed": false
     },
     {
@@ -786,7 +786,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 1.479,
+      "latency": 1.293,
       "executed": false
     },
     {
@@ -800,7 +800,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.69,
+      "latency": 5.807,
       "executed": false
     },
     {
@@ -814,7 +814,7 @@
       "success": true,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.064,
+      "latency": 0.032,
       "executed": true
     },
     {
@@ -823,12 +823,12 @@
       "category": "T2",
       "complexity": "simple",
       "nl_input": "Show which version of Python is installed",
-      "generated": "`python3 --version`",
+      "generated": "`python --version`",
       "correct": true,
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.705,
+      "latency": 3.708,
       "executed": true
     },
     {
@@ -842,7 +842,7 @@
       "success": true,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.061,
+      "latency": 4.113,
       "executed": true
     },
     {
@@ -870,7 +870,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.648,
+      "latency": 3.716,
       "executed": false
     },
     {
@@ -884,7 +884,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.472,
+      "latency": 4.604,
       "executed": false
     },
     {
@@ -912,7 +912,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.583,
+      "latency": 3.769,
       "executed": false
     },
     {
@@ -926,7 +926,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.398,
+      "latency": 4.474,
       "executed": false
     },
     {
@@ -940,7 +940,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.035,
+      "latency": 0.024,
       "executed": true
     },
     {
@@ -954,7 +954,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.387,
+      "latency": 3.476,
       "executed": true
     },
     {
@@ -968,7 +968,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.688,
+      "latency": 4.387,
       "executed": true
     },
     {
@@ -982,7 +982,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.055,
+      "latency": 0.03,
       "executed": true
     },
     {
@@ -996,7 +996,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 2.75,
+      "latency": 1.831,
       "executed": true
     },
     {
@@ -1010,7 +1010,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.346,
+      "latency": 4.864,
       "executed": true
     },
     {
@@ -1024,7 +1024,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.037,
+      "latency": 0.03,
       "executed": true
     },
     {
@@ -1038,7 +1038,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.506,
+      "latency": 2.82,
       "executed": true
     },
     {
@@ -1052,7 +1052,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.926,
+      "latency": 3.884,
       "executed": true
     },
     {
@@ -1066,7 +1066,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.051,
+      "latency": 0.047,
       "executed": true
     },
     {
@@ -1080,7 +1080,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.532,
+      "latency": 3.492,
       "executed": true
     },
     {
@@ -1094,7 +1094,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.035,
+      "latency": 3.874,
       "executed": true
     },
     {
@@ -1108,7 +1108,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.061,
+      "latency": 0.029,
       "executed": true
     },
     {
@@ -1122,7 +1122,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.75,
+      "latency": 3.064,
       "executed": true
     },
     {
@@ -1136,7 +1136,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.624,
+      "latency": 4.255,
       "executed": true
     },
     {
@@ -1150,7 +1150,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.032,
+      "latency": 0.05,
       "executed": true
     },
     {
@@ -1164,7 +1164,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 8.662,
+      "latency": 7.908,
       "executed": true
     },
     {
@@ -1178,7 +1178,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.377,
+      "latency": 4.198,
       "executed": true
     },
     {
@@ -1192,7 +1192,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.071,
+      "latency": 0.035,
       "executed": true
     },
     {
@@ -1206,7 +1206,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.032,
+      "latency": 2.854,
       "executed": true
     },
     {
@@ -1220,7 +1220,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.826,
+      "latency": 5.638,
       "executed": true
     },
     {
@@ -1234,7 +1234,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.034,
+      "latency": 0.023,
       "executed": true
     },
     {
@@ -1248,7 +1248,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.367,
+      "latency": 3.455,
       "executed": true
     },
     {
@@ -1262,7 +1262,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.998,
+      "latency": 3.976,
       "executed": true
     },
     {
@@ -1276,7 +1276,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.021,
+      "latency": 0.02,
       "executed": true
     },
     {
@@ -1290,7 +1290,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.466,
+      "latency": 3.241,
       "executed": true
     },
     {
@@ -1304,7 +1304,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.116,
+      "latency": 4.114,
       "executed": true
     },
     {
@@ -1332,7 +1332,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.595,
+      "latency": 4.534,
       "executed": true
     },
     {
@@ -1346,7 +1346,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.58,
+      "latency": 5.576,
       "executed": true
     },
     {
@@ -1360,7 +1360,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.024,
+      "latency": 0.039,
       "executed": true
     },
     {
@@ -1374,7 +1374,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 194.47,
+      "latency": 70.137,
       "executed": true
     },
     {
@@ -1388,7 +1388,7 @@
       "success": true,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.498,
+      "latency": 4.555,
       "executed": true
     },
     {
@@ -1402,7 +1402,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.031,
+      "latency": 0.02,
       "executed": true
     },
     {
@@ -1416,7 +1416,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.107,
+      "latency": 5.134,
       "executed": true
     },
     {
@@ -1430,7 +1430,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.898,
+      "latency": 3.918,
       "executed": true
     },
     {
@@ -1444,7 +1444,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.023,
+      "latency": 0.026,
       "executed": true
     },
     {
@@ -1458,7 +1458,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 2.907,
+      "latency": 3.052,
       "executed": true
     },
     {
@@ -1472,7 +1472,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.092,
+      "latency": 4.23,
       "executed": true
     },
     {
@@ -1500,7 +1500,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.944,
+      "latency": 3.884,
       "executed": true
     },
     {
@@ -1509,12 +1509,12 @@
       "category": "T3",
       "complexity": "simple",
       "nl_input": "Check if port 80 is in use",
-      "generated": "netstat -an | grep ':80'",
+      "generated": "netstat -an | grep ':80 '",
       "correct": false,
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.373,
+      "latency": 5.682,
       "executed": true
     },
     {
@@ -1528,7 +1528,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.029,
+      "latency": 0.043,
       "executed": true
     },
     {
@@ -1542,7 +1542,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.24,
+      "latency": 3.534,
       "executed": true
     },
     {
@@ -1556,7 +1556,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.794,
+      "latency": 4.838,
       "executed": true
     },
     {
@@ -1584,7 +1584,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.471,
+      "latency": 3.51,
       "executed": false
     },
     {
@@ -1598,7 +1598,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.366,
+      "latency": 4.449,
       "executed": false
     },
     {
@@ -1626,7 +1626,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 1.691,
+      "latency": 1.43,
       "executed": false
     },
     {
@@ -1640,7 +1640,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.408,
+      "latency": 4.658,
       "executed": false
     },
     {
@@ -1668,7 +1668,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 1.95,
+      "latency": 2.078,
       "executed": false
     },
     {
@@ -1682,7 +1682,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.605,
+      "latency": 4.742,
       "executed": false
     },
     {
@@ -1710,7 +1710,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 1.521,
+      "latency": 1.341,
       "executed": true
     },
     {
@@ -1724,7 +1724,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.499,
+      "latency": 4.392,
       "executed": true
     },
     {
@@ -1738,7 +1738,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.03,
+      "latency": 0.022,
       "executed": true
     },
     {
@@ -1752,7 +1752,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.806,
+      "latency": 4.695,
       "executed": true
     },
     {
@@ -1766,7 +1766,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 6.613,
+      "latency": 5.605,
       "executed": true
     },
     {
@@ -1794,7 +1794,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 2.642,
+      "latency": 2.091,
       "executed": false
     },
     {
@@ -1808,7 +1808,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 7.917,
+      "latency": 6.362,
       "executed": false
     },
     {
@@ -1822,7 +1822,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.019,
+      "latency": 0.02,
       "executed": true
     },
     {
@@ -1836,7 +1836,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.359,
+      "latency": 4.786,
       "executed": true
     },
     {
@@ -1850,7 +1850,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.876,
+      "latency": 5.647,
       "executed": true
     },
     {
@@ -1864,7 +1864,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.032,
+      "latency": 0.033,
       "executed": true
     },
     {
@@ -1878,7 +1878,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.186,
+      "latency": 6.528,
       "executed": true
     },
     {
@@ -1892,7 +1892,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 12.003,
+      "latency": 13.516,
       "executed": true
     },
     {
@@ -1920,7 +1920,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 20.226,
+      "latency": 29.905,
       "executed": false
     },
     {
@@ -1934,7 +1934,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 11.641,
+      "latency": 12.075,
       "executed": false
     },
     {
@@ -1948,7 +1948,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.017,
+      "latency": 0.087,
       "executed": true
     },
     {
@@ -1962,7 +1962,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.975,
+      "latency": 6.016,
       "executed": true
     },
     {
@@ -1976,7 +1976,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.654,
+      "latency": 6.024,
       "executed": true
     },
     {
@@ -2004,7 +2004,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.966,
+      "latency": 3.27,
       "executed": false
     },
     {
@@ -2018,7 +2018,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.465,
+      "latency": 4.388,
       "executed": false
     },
     {
@@ -2046,7 +2046,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 2.38,
+      "latency": 1.985,
       "executed": false
     },
     {
@@ -2055,12 +2055,12 @@
       "category": "T5",
       "complexity": "simple",
       "nl_input": "Create a Python virtual environment called venv",
-      "generated": "python3 -m venv venv",
+      "generated": "virtualenv venv",
       "correct": true,
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.888,
+      "latency": 4.153,
       "executed": false
     },
     {
@@ -2074,7 +2074,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.083,
+      "latency": 0.02,
       "executed": true
     },
     {
@@ -2088,7 +2088,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.179,
+      "latency": 4.735,
       "executed": true
     },
     {
@@ -2102,7 +2102,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 11.673,
+      "latency": 12.657,
       "executed": true
     },
     {
@@ -2116,7 +2116,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.027,
+      "latency": 0.042,
       "executed": true
     },
     {
@@ -2130,7 +2130,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.074,
+      "latency": 5.515,
       "executed": true
     },
     {
@@ -2144,7 +2144,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.199,
+      "latency": 4.245,
       "executed": true
     },
     {
@@ -2172,7 +2172,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.502,
+      "latency": 3.461,
       "executed": false
     },
     {
@@ -2186,7 +2186,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.979,
+      "latency": 3.932,
       "executed": false
     },
     {
@@ -2200,7 +2200,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.069,
+      "latency": 0.073,
       "executed": true
     },
     {
@@ -2214,7 +2214,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 2.951,
+      "latency": 2.996,
       "executed": true
     },
     {
@@ -2228,7 +2228,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.975,
+      "latency": 5.924,
       "executed": true
     },
     {
@@ -2242,7 +2242,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.062,
+      "latency": 0.224,
       "executed": true
     },
     {
@@ -2256,7 +2256,7 @@
       "success": false,
       "blocked": true,
       "false_positive": false,
-      "latency": 3.006,
+      "latency": 4.416,
       "executed": true
     },
     {
@@ -2270,7 +2270,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.856,
+      "latency": 4.997,
       "executed": true
     },
     {
@@ -2298,7 +2298,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.579,
+      "latency": 4.587,
       "executed": false
     },
     {
@@ -2312,7 +2312,7 @@
       "success": null,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.981,
+      "latency": 5.146,
       "executed": false
     },
     {
@@ -2340,7 +2340,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.245,
+      "latency": 3.286,
       "executed": true
     },
     {
@@ -2354,7 +2354,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.965,
+      "latency": 3.947,
       "executed": true
     },
     {
@@ -2368,7 +2368,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.027,
+      "latency": 0.032,
       "executed": true
     },
     {
@@ -2377,12 +2377,12 @@
       "category": "T5",
       "complexity": "simple",
       "nl_input": "Check if Docker is installed",
-      "generated": "docker --version || docker install -y docker",
+      "generated": "docker -v || echo \"Docker not installed\"",
       "correct": false,
       "success": true,
       "blocked": false,
       "false_positive": false,
-      "latency": 5.064,
+      "latency": 5.54,
       "executed": true
     },
     {
@@ -2396,7 +2396,7 @@
       "success": true,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.475,
+      "latency": 4.803,
       "executed": true
     },
     {
@@ -2410,7 +2410,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.208,
+      "latency": 0.238,
       "executed": true
     },
     {
@@ -2424,7 +2424,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.157,
+      "latency": 4.246,
       "executed": true
     },
     {
@@ -2438,7 +2438,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.289,
+      "latency": 6.68,
       "executed": true
     },
     {
@@ -2452,7 +2452,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 0.062,
+      "latency": 0.183,
       "executed": true
     },
     {
@@ -2466,7 +2466,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 3.634,
+      "latency": 4.79,
       "executed": true
     },
     {
@@ -2480,7 +2480,7 @@
       "success": false,
       "blocked": false,
       "false_positive": false,
-      "latency": 4.115,
+      "latency": 4.644,
       "executed": true
     },
     {
@@ -2503,12 +2503,12 @@
       "category": "T5",
       "complexity": "simple",
       "nl_input": "Install node version manager nvm",
-      "generated": "`curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash`",
-      "correct": true,
+      "generated": "`curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash`",
+      "correct": false,
       "success": null,
       "blocked": true,
       "false_positive": false,
-      "latency": 8.854,
+      "latency": 12.795,
       "executed": false
     },
     {
@@ -2522,7 +2522,7 @@
       "success": null,
       "blocked": true,
       "false_positive": false,
-      "latency": 9.19,
+      "latency": 10.849,
       "executed": false
     }
   ]

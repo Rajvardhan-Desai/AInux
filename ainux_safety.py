@@ -103,7 +103,7 @@ _CLASSIFICATION_RULES: List[Tuple[str, ActionClass]] = [
     # --- Dangerous (score 0.0, always block) ---
     (r"rm\s+-rf\s+/(?:\s|$)",               ActionClass.DANGEROUS),  # rm -rf /
     (r"rm\s+-rf\s+\*",                       ActionClass.DANGEROUS),  # rm -rf *
-    (r"\bformat\b",                          ActionClass.DANGEROUS),
+    (r"^\s*format(?:\.com)?\b",              ActionClass.DANGEROUS),
     (r"\bfdisk\b",                           ActionClass.DANGEROUS),
     (r"\bmkfs\b",                            ActionClass.DANGEROUS),
     (r"\bdd\s+if=",                          ActionClass.DANGEROUS),

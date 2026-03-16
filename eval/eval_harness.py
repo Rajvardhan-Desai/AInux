@@ -25,6 +25,23 @@ from eval_tasks import ALL_TASKS, CATEGORIES, EvalTask, TASK_MAP
 from eval_baselines import AInuxSystem, NaShBaseline, SystemResult, TraditionalCLI
 
 
+def _default_ollama_host() -> str:
+    return (
+        os.getenv("AINUX_OLLAMA_HOST")
+        or os.getenv("OLLAMA_HOST")
+        or "http://127.0.0.1:12345"
+    )
+
+
+def _normalize_ollama_host(host: str) -> str:
+    host = (host or _default_ollama_host()).strip()
+    if host.isdigit():
+        return f"http://127.0.0.1:{host}"
+    if "://" not in host:
+        return f"http://{host}"
+    return host
+
+
 # ---------------------------------------------------------------------------
 # Harness
 # ---------------------------------------------------------------------------
@@ -33,10 +50,11 @@ class EvalHarness:
 
     def __init__(
         self,
-        ollama_host: str = "http://localhost:11434",
+        ollama_host: str = _default_ollama_host(),
         model: str = "phi3:mini",
     ):
         print("[Harness] Initialising systems...")
+        ollama_host = _normalize_ollama_host(ollama_host)
         self.cli   = TraditionalCLI()
         self.nash  = NaShBaseline(ollama_host, model)
         self.ainux = AInuxSystem(ollama_host, model)
@@ -138,8 +156,7 @@ class EvalHarness:
                 cmd = self.ainux.llm.generate_command(task.natural_language, ctx) or ""
                 if cmd:
                     v = self.ainux.safety.validate_command(cmd)
-                    from AInux.ainux_safety import ConfirmationLevel
-                    blocked = v.confirmation == ConfirmationLevel.BLOCK
+                    blocked = getattr(v.confirmation, "name", "") == "BLOCK"
             latency = time.time() - t0
             correct = task.is_correct(cmd) and not blocked
             self._record_generation("AInux", task, cmd, correct, blocked, latency)
@@ -214,7 +231,7 @@ class EvalHarness:
 
 def main():
     parser = argparse.ArgumentParser(description="AInux Evaluation Harness")
-    parser.add_argument("--host",     default="http://localhost:11434")
+    parser.add_argument("--host",     default=_default_ollama_host())
     parser.add_argument("--model",    default="phi3:mini")
     parser.add_argument("--system",   choices=["cli", "nash", "ainux", "all"],
                                       default="all")
@@ -226,8 +243,6 @@ def main():
 
     if args.dry_run:
         print("[Harness] Dry run — checking imports only")
-        from eval_tasks import ALL_TASKS
-        from eval_baselines import TraditionalCLI, NaShBaseline, AInuxSystem
         print(f"  eval_tasks   : OK ({len(ALL_TASKS)} tasks)")
         print(f"  eval_baselines: OK")
         return
@@ -235,7 +250,7 @@ def main():
     tasks = CATEGORIES.get(args.category, ALL_TASKS) if args.category != "all" else ALL_TASKS
     systems = ["cli", "nash", "ainux"] if args.system == "all" else [args.system]
 
-    harness = EvalHarness(ollama_host=args.host, model=args.model)
+    harness = EvalHarness(ollama_host=_normalize_ollama_host(args.host), model=args.model)
     harness.run(tasks=tasks, systems=systems)
     harness.save(args.results)
 

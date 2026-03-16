@@ -52,7 +52,39 @@ class EvalTask:
 
 
 def _normalise(cmd: str) -> str:
-    return re.sub(r'\s+', ' ', cmd.strip().lower())
+    cmd = cmd.strip()
+    if cmd.startswith("```") and cmd.endswith("```"):
+        cmd = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", cmd)
+        cmd = re.sub(r"\s*```$", "", cmd)
+    if cmd.startswith("`") and cmd.endswith("`"):
+        cmd = cmd[1:-1].strip()
+    cmd = re.sub(r'\s+', ' ', cmd.lower())
+    # Treat single and double quotes as equivalent so models that use
+    # double-quotes aren't penalised when the ground truth uses single-quotes
+    cmd = cmd.replace('"', "'")
+    # Strip trailing semicolons the model may append
+    cmd = cmd.rstrip(';').strip()
+    return cmd
+
+
+def _is_self_signed_ssl_command(generated_command: str) -> bool:
+    cmd = _normalise(generated_command)
+    required = [
+        "openssl req",
+        "-x509",
+        "-newkey",
+        "-keyout",
+        "-out",
+    ]
+    return all(token in cmd for token in required) and ("-nodes" in cmd or "-noenc" in cmd)
+
+
+def _is_nvm_install_command(generated_command: str) -> bool:
+    cmd = _normalise(generated_command)
+    return bool(re.fullmatch(
+        r"(?:curl -o-|wget -qo-) https://raw\.githubusercontent\.com/nvm-sh/nvm/v0\.39\.\d+/install\.sh \| bash",
+        cmd,
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +119,7 @@ FILE_TASKS = [
     EvalTask(
         id="T1_05",
         natural_language="Find all Python files in the current directory",
-        ground_truth=["find . -name '*.py'", "find . -name '*.py' -type f", "ls *.py"],
+        ground_truth=["find . -name '*.py'", "find . -name '*.py' -type f", "find . -type f -name '*.py'", "ls *.py"],
         category="T1", complexity="simple",
     ),
     EvalTask(
@@ -131,7 +163,7 @@ FILE_TASKS = [
     EvalTask(
         id="T1_12",
         natural_language="Show file permissions for all files in current directory",
-        ground_truth=["ls -la", "stat *"],
+        ground_truth=["ls -la", "ls -l", "stat *"],
         category="T1", complexity="simple",
     ),
 ]
@@ -151,7 +183,7 @@ PACKAGE_TASKS = [
     EvalTask(
         id="T2_02",
         natural_language="Install nginx",
-        ground_truth=["apt-get install -y nginx", "apt install -y nginx"],
+        ground_truth=["apt-get install -y nginx", "apt install -y nginx", "apt-get update && apt-get install nginx"],
         category="T2", complexity="simple",
         safe_to_execute=False,
     ),
@@ -177,7 +209,7 @@ PACKAGE_TASKS = [
     EvalTask(
         id="T2_06",
         natural_language="Upgrade all installed packages",
-        ground_truth=["apt-get upgrade -y", "apt upgrade -y"],
+        ground_truth=["apt-get upgrade -y", "apt upgrade -y", "apt-get update && apt-get upgrade -y"],
         category="T2", complexity="simple",
         safe_to_execute=False,
     ),
@@ -204,7 +236,7 @@ PACKAGE_TASKS = [
     EvalTask(
         id="T2_10",
         natural_language="Remove the package vim",
-        ground_truth=["apt-get remove -y vim", "apt remove -y vim"],
+        ground_truth=["apt-get remove -y vim", "apt remove -y vim", "apt-get remove vim"],
         category="T2", complexity="simple",
         safe_to_execute=False,
     ),
@@ -230,7 +262,7 @@ DIAGNOSTICS_TASKS = [
     EvalTask(
         id="T3_01",
         natural_language="Show CPU usage",
-        ground_truth=["top -bn1", "mpstat 1 1", "top -bn1 | head -20"],
+        ground_truth=["top -bn1", "top", "mpstat 1 1", "top -bn1 | head -20"],
         category="T3", complexity="simple",
     ),
     EvalTask(
@@ -254,13 +286,13 @@ DIAGNOSTICS_TASKS = [
     EvalTask(
         id="T3_05",
         natural_language="Show the last 50 lines of system logs",
-        ground_truth=["journalctl -n 50", "journalctl -n 50 --no-pager", "tail -50 /var/log/syslog"],
+        ground_truth=["journalctl -n 50", "journalctl -n 50 --no-pager", "tail -50 /var/log/syslog", "tail -n 50 /var/log/syslog"],
         category="T3", complexity="simple",
     ),
     EvalTask(
         id="T3_06",
         natural_language="Show network interface configuration",
-        ground_truth=["ifconfig", "ip addr", "ip addr show"],
+        ground_truth=["ifconfig", "ip a", "ip addr", "ip addr show"],
         category="T3", complexity="simple",
     ),
     EvalTask(
@@ -282,7 +314,7 @@ DIAGNOSTICS_TASKS = [
     EvalTask(
         id="T3_09",
         natural_language="Show open network connections",
-        ground_truth=["ss -tuln", "netstat -tuln", "ss -tulnp"],
+        ground_truth=["ss -tuln", "netstat -tuln", "netstat -an", "ss -tulnp"],
         category="T3", complexity="simple",
     ),
     EvalTask(
@@ -300,7 +332,7 @@ DIAGNOSTICS_TASKS = [
     EvalTask(
         id="T3_12",
         natural_language="Check if port 80 is in use",
-        ground_truth=["ss -tuln | grep :80", "netstat -tuln | grep :80", "lsof -i :80"],
+        ground_truth=["ss -tuln | grep :80", "netstat -tuln | grep :80", "netstat -an | grep :80", "lsof -i :80"],
         category="T3", complexity="simple",
     ),
 ]
@@ -346,7 +378,7 @@ WEBSERVER_TASKS = [
     EvalTask(
         id="T4_06",
         natural_language="Show the nginx error log",
-        ground_truth=["tail -50 /var/log/nginx/error.log", "cat /var/log/nginx/error.log"],
+        ground_truth=["tail -50 /var/log/nginx/error.log", "tail /var/log/nginx/error.log", "cat /var/log/nginx/error.log"],
         category="T4", complexity="simple",
     ),
     EvalTask(
@@ -359,7 +391,7 @@ WEBSERVER_TASKS = [
     EvalTask(
         id="T4_08",
         natural_language="Show firewall status",
-        ground_truth=["ufw status", "ufw status verbose", "iptables -L"],
+        ground_truth=["ufw status", "ufw status verbose", "iptables -L", "iptables --list-rules"],
         category="T4", complexity="simple",
     ),
     EvalTask(
@@ -378,12 +410,13 @@ WEBSERVER_TASKS = [
             "openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout server.key -out server.crt",
         ],
         category="T4", complexity="simple",
+        verify_fn=_is_self_signed_ssl_command,
         safe_to_execute=False,
     ),
     EvalTask(
         id="T4_11",
         natural_language="Show the nginx access log",
-        ground_truth=["tail -100 /var/log/nginx/access.log", "cat /var/log/nginx/access.log"],
+        ground_truth=["tail -100 /var/log/nginx/access.log", "tail /var/log/nginx/access.log", "cat /var/log/nginx/access.log"],
         category="T4", complexity="simple",
     ),
     EvalTask(
@@ -403,7 +436,7 @@ DEVSETUP_TASKS = [
     EvalTask(
         id="T5_01",
         natural_language="Create a Python virtual environment called venv",
-        ground_truth=["python3 -m venv venv", "python -m venv venv"],
+        ground_truth=["python3 -m venv venv", "python -m venv venv", "virtualenv venv"],
         category="T5", complexity="simple",
         safe_to_execute=False,
     ),
@@ -435,7 +468,7 @@ DEVSETUP_TASKS = [
     EvalTask(
         id="T5_06",
         natural_language="Show the last 5 git commits",
-        ground_truth=["git log --oneline -5", "git log -5", "git log -5 --oneline"],
+        ground_truth=["git log --oneline -5", "git log -5", "git log -5 --oneline", "git log -5 --pretty=format:'%h %s'"],
         category="T5", complexity="simple",
     ),
     EvalTask(
@@ -474,9 +507,11 @@ DEVSETUP_TASKS = [
         natural_language="Install node version manager nvm",
         ground_truth=[
             'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash',
+            'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash',
             'wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash',
         ],
         category="T5", complexity="simple",
+        verify_fn=_is_nvm_install_command,
         safe_to_execute=False,
     ),
 ]

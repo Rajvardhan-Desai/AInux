@@ -21,7 +21,12 @@ import sys
 from typing import Optional
 
 from .ainux_agents import AgentDispatcher
-from .ainux_llm_runtime import LocalLLMRuntime, OllamaConfig
+from .ainux_llm_runtime import (
+    DEFAULT_OLLAMA_HOST,
+    LocalLLMRuntime,
+    OllamaConfig,
+    normalize_ollama_host,
+)
 from .ainux_memory import AInuxMemory
 from .ainux_safety import ConfirmationLevel, MDPSafetyChecker
 
@@ -49,13 +54,13 @@ class AIShell:
     def __init__(
         self,
         model: str = "phi3:mini",
-        ollama_host: str = "http://localhost:11434",
+        ollama_host: str = DEFAULT_OLLAMA_HOST,
         persist_memory: bool = True,
     ):
         print("[AInux] Initialising components...")
 
         # LLM runtime
-        cfg = OllamaConfig(host=ollama_host, model=model)
+        cfg = OllamaConfig(host=normalize_ollama_host(ollama_host), model=model)
         self.llm = LocalLLMRuntime(cfg)
 
         # Memory
@@ -324,9 +329,10 @@ class AIShell:
 
     def _get_voice_input(self) -> Optional[str]:
         try:
-            from voice_input import listen_for_command, VoiceInputError
+            import importlib
+            voice_input = importlib.import_module("voice_input")
             print("Listening...")
-            return listen_for_command(timeout=6, phrase_time_limit=8)
+            return voice_input.listen_for_command(timeout=6, phrase_time_limit=8)
         except Exception as e:
             print(f"Voice error: {e}")
             return input("AInux> ").strip()
@@ -385,7 +391,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AInux — AI-Native Linux Shell")
     parser.add_argument("--model",  default="phi3:mini",
                         help="Ollama model name (default: phi3:mini)")
-    parser.add_argument("--host",   default="http://localhost:11434",
+    parser.add_argument("--host",   default=DEFAULT_OLLAMA_HOST,
                         help="Ollama server URL")
     parser.add_argument("--voice",  action="store_true",
                         help="Enable voice input")
@@ -395,7 +401,7 @@ if __name__ == "__main__":
 
     shell = AIShell(
         model=args.model,
-        ollama_host=args.host,
+        ollama_host=normalize_ollama_host(args.host),
         persist_memory=not args.no_persist,
     )
     shell.run_interactive(voice=args.voice)

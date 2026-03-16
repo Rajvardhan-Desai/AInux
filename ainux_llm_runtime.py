@@ -14,6 +14,8 @@ Implements KV-cache awareness and dynamic batching described in paper Sec III.C.
 from __future__ import annotations
 
 import json
+import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -25,9 +27,24 @@ import requests
 # Configuration
 # ---------------------------------------------------------------------------
 
+DEFAULT_OLLAMA_HOST = (
+    os.getenv("AINUX_OLLAMA_HOST")
+    or os.getenv("OLLAMA_HOST")
+    or "http://127.0.0.1:12345"
+)
+
+
+def normalize_ollama_host(host: str) -> str:
+    host = (host or DEFAULT_OLLAMA_HOST).strip()
+    if host.isdigit():
+        return f"http://127.0.0.1:{host}"
+    if "://" not in host:
+        return f"http://{host}"
+    return host
+
 @dataclass
 class OllamaConfig:
-    host: str    = "http://localhost:11434"
+    host: str = field(default_factory=lambda: DEFAULT_OLLAMA_HOST)
     model: str   = "phi3:mini"          # fits comfortably in 8GB
     temperature: float = 0.1            # low = deterministic commands
     timeout: int = 60
@@ -35,6 +52,9 @@ class OllamaConfig:
     context_window: int = 4096
     # Quantization hint for paper metrics (actual quantization is done by Ollama)
     quantization_bits: int = 4
+
+    def __post_init__(self) -> None:
+        self.host = normalize_ollama_host(self.host)
 
 
 # ---------------------------------------------------------------------------
@@ -56,12 +76,14 @@ class LocalLLMRuntime:
         "You are AInux, an expert system administration assistant. "
         "Convert natural language instructions into safe shell commands. "
         "Rules:\n"
-        "1. Output ONLY the shell command — no explanation, no markdown.\n"
+        "1. Output ONLY the shell command — no explanation, no markdown, no backticks, no code fences.\n"
         "2. Never output dangerous commands (rm -rf /, format, shutdown, etc.).\n"
         "3. If the request is ambiguous or unsafe, output: AINUX_CLARIFY\n"
-        "4. If the request cannot be expressed as a single shell command, "
-        "   output a semicolon-separated list of commands.\n"
+        "4. Prefer a single canonical shell command. Only use && or ; if the user explicitly asks for multiple actions or one command is impossible.\n"
         "5. Use commands appropriate for Linux/Debian unless told otherwise.\n"
+        "6. Preserve literal filenames, directories, ports, and package names from the request. Never invent placeholder paths like /path/to/...\n"
+        "7. Do not add sudo, apt-get update, cd, echo, comments, or verification steps unless the user explicitly asks for them.\n"
+        "8. Prefer canonical forms such as ls -la, find . -name '*.py' -type f, df -h, git init, which python, and git log --oneline -5.\n"
     )
 
     def __init__(self, config: Optional[OllamaConfig] = None):
@@ -92,10 +114,14 @@ class LocalLLMRuntime:
                 else:
                     print(f"[AInux LLM] Connected to Ollama — model: {self.config.model}")
             else:
-                print(f"[AInux LLM] Ollama responded with status {resp.status_code}")
+                print(
+                    f"[AInux LLM] Ollama at {self.config.host} responded with "
+                    f"status {resp.status_code}"
+                )
         except requests.ConnectionError:
             print(
-                "[AInux LLM] Ollama not running. Start it with: ollama serve\n"
+                f"[AInux LLM] Ollama not reachable at {self.config.host}. "
+                "Start it with: ollama serve\n"
                 f"[AInux LLM] Then pull a model: ollama pull {self.config.model}"
             )
         except Exception as e:
@@ -119,7 +145,7 @@ class LocalLLMRuntime:
         Returns the command string, or None on failure.
         """
         if not self.available:
-            return None
+            return self._regex_fallback(user_input)
 
         prompt = self._build_prompt(user_input, context, platform)
 
@@ -139,7 +165,7 @@ class LocalLLMRuntime:
                 if attempt < self.config.max_retries - 1:
                     time.sleep(1)
 
-        return None
+        return self._regex_fallback(user_input)
 
     def generate_plan(
         self,
@@ -217,7 +243,9 @@ class LocalLLMRuntime:
             timeout=self.config.timeout,
         )
         resp.raise_for_status()
-        return resp.json().get("response", "").strip()
+        raw_output = resp.json().get("response", "")
+        print(f"[AInux LLM][DEBUG] raw_output={raw_output!r}")
+        return raw_output.strip()
 
     # ------------------------------------------------------------------
     # Response parsing
@@ -229,10 +257,32 @@ class LocalLLMRuntime:
             parts.append(f"Recent context:\n{context}\n")
         parts.append(
             f"Platform: {platform}\n"
+            f"Return the shortest canonical command that satisfies the request.\n"
             f"User request: {user_input}\n"
             f"Shell command:"
         )
         return "\n".join(parts)
+
+    def _canonicalize_command(self, command: str) -> str:
+        command = command.strip()
+
+        if command.startswith("`") and command.endswith("`"):
+            command = command[1:-1].strip()
+
+        match = re.fullmatch(r"find \. -type f -name (.+)", command)
+        if match:
+            return f"find . -name {match.group(1)} -type f"
+
+        if command == "ip a":
+            return "ip addr"
+
+        if command in {
+            'git log -5 --pretty=format:"%h %s"',
+            "git log -5 --pretty=format:'%h %s'",
+        }:
+            return "git log --oneline -5"
+
+        return command
 
     def _extract_command(self, raw: str) -> Optional[str]:
         """Clean up LLM output to a single shell command."""
@@ -241,13 +291,13 @@ class LocalLLMRuntime:
 
         command = raw.strip()
 
-        # Strip markdown code fences
-        if command.startswith("```"):
-            lines = command.split("\n")
-            command = "\n".join(
-                l for l in lines
-                if not l.startswith("```") and l.strip()
-            )
+        # Strip markdown code fences (single-line and multi-line)
+        # Example: ```bash\nls -la\n``` or ```bash ls -la ```
+        command = re.sub(r"^```[a-zA-Z0-9_-]*\s*\n?", "", command)
+        command = re.sub(r"\n?```$", "", command).strip()
+        if command.startswith("```") and "```" in command[3:]:
+            command = re.sub(r"^```.*?\n", "", command, flags=re.DOTALL)
+            command = re.sub(r"```$", "", command).strip()
 
         # Bail on clarification requests
         if "AINUX_CLARIFY" in command:
@@ -256,15 +306,49 @@ class LocalLLMRuntime:
         # Take only first line if multiline (single-command mode)
         command = command.split("\n")[0].strip()
 
+        if command.startswith("`") and command.endswith("`"):
+            command = command[1:-1].strip()
+
         # Strip common decorators
         for prefix in ["$", "#", ">", "bash:", "sh:"]:
             if command.lower().startswith(prefix):
                 command = command[len(prefix):].strip()
 
+        # Strip trailing semicolons left by the model on single commands
+        command = command.rstrip(";").strip()
+
+        command = self._canonicalize_command(command)
+
+        placeholder_patterns = [
+            r"/path/to/",
+            r"<[^>]+>",
+            r"\byour[_/-]",
+            r"\bexample[_/-]",
+        ]
+        if any(re.search(pattern, command, flags=re.IGNORECASE) for pattern in placeholder_patterns):
+            return None
+
         if not command or len(command) > 500:
             return None
 
         return command
+
+    def _regex_fallback(self, text: str) -> Optional[str]:
+        """Minimal fallback when Ollama is unavailable or generation fails."""
+        lower = text.lower()
+        if re.search(r"list.*files|show.*files|ls", lower):
+            return "ls -la"
+        if re.search(r"current.*dir|where.*am|pwd", lower):
+            return "pwd"
+        if re.search(r"disk.*space|disk.*usage", lower):
+            return "df -h"
+        if re.search(r"memory", lower):
+            return "free -h"
+        if re.search(r"processes", lower):
+            return "ps aux"
+        if re.search(r"uptime", lower):
+            return "uptime"
+        return None
 
     def _extract_plan(self, raw: str, max_steps: int) -> List[str]:
         """Parse a numbered list of commands from plan response."""

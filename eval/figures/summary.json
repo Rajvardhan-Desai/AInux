@@ -1,0 +1,66 @@
+{
+  "overall": {
+    "TraditionalCLI": {
+      "accuracy": 1.0,
+      "mean_latency": 0.032683333333333335,
+      "false_positive_rate": 0.0
+    },
+    "NaSh": {
+      "accuracy": 0.11666666666666667,
+      "mean_latency": 0.0028166666666666665,
+      "false_positive_rate": 0.0
+    },
+    "AInux": {
+      "accuracy": 0.0,
+      "mean_latency": 0.0,
+      "false_positive_rate": 0.0
+    }
+  },
+  "statistical_tests": [
+    {
+      "test": "Wilcoxon signed-rank",
+      "stat": 0.0,
+      "p": 9.485737571073745e-15,
+      "significant": true,
+      "cohen_d": -999999999.9999999,
+      "ci_95": [
+        -1.0,
+        -1.0
+      ],
+      "label_a": "AInux",
+      "label_b": "TraditionalCLI",
+      "mean_a": 0.0,
+      "mean_b": 1.0
+    },
+    {
+      "test": "Wilcoxon signed-rank",
+      "stat": 0.0,
+      "p": 0.0081509715935027,
+      "significant": true,
+      "cohen_d": -0.36342189102374,
+      "ci_95": [
+        -0.2,
+        -0.05
+      ],
+      "label_a": "AInux",
+      "label_b": "NaSh",
+      "mean_a": 0.0,
+      "mean_b": 0.11666666666666667
+    },
+    {
+      "test": "Wilcoxon signed-rank",
+      "stat": 0.0,
+      "p": 3.3354836640578655e-13,
+      "significant": true,
+      "cohen_d": -2.7516228891797456,
+      "ci_95": [
+        -0.95,
+        -0.8
+      ],
+      "label_a": "NaSh",
+      "label_b": "TraditionalCLI",
+      "mean_a": 0.11666666666666667,
+      "mean_b": 1.0
+    }
+  ]
+}

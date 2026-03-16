@@ -65,6 +65,13 @@ ollama pull llama3.2:3b         # 2.0GB
 ollama pull mistral:7b-q4       # 4.1GB — best quality
 ```
 
+If Ollama is exposed on a different host or port, set `AINUX_OLLAMA_HOST` or
+`OLLAMA_HOST` before running AInux or the eval harness. Example:
+
+```bash
+export OLLAMA_HOST=http://127.0.0.1:12345
+```
+
 ### 2. Install Python dependencies
 
 ```bash

@@ -1,0 +1,71 @@
+{
+  "overall": {
+    "TraditionalCLI": {
+      "accuracy": 1.0,
+      "mean_latency": 0.161,
+      "false_positive_rate": 0.0
+    },
+    "NaSh": {
+      "accuracy": 0.3333333333333333,
+      "mean_latency": 1.5280999999999998,
+      "false_positive_rate": 0.0
+    },
+    "AInux": {
+      "accuracy": 0.3,
+      "mean_latency": 2.5585666666666667,
+      "false_positive_rate": 0.0
+    }
+  },
+  "systems_present": [
+    "TraditionalCLI",
+    "NaSh",
+    "AInux"
+  ],
+  "statistical_tests": [
+    {
+      "test": "Wilcoxon signed-rank",
+      "stat": 0.0,
+      "p": 9.12734179928913e-11,
+      "significant": true,
+      "cohen_d": -1.527525228318613,
+      "ci_95": [
+        -0.8166666666666667,
+        -0.5833333333333334
+      ],
+      "label_a": "AInux",
+      "label_b": "TraditionalCLI",
+      "mean_a": 0.3,
+      "mean_b": 1.0
+    },
+    {
+      "test": "Wilcoxon signed-rank",
+      "stat": 32.5,
+      "p": 0.5637028616507731,
+      "significant": false,
+      "cohen_d": -0.0747435091075958,
+      "ci_95": [
+        -0.15,
+        0.08333333333333333
+      ],
+      "label_a": "AInux",
+      "label_b": "NaSh",
+      "mean_a": 0.3,
+      "mean_b": 0.3333333333333333
+    },
+    {
+      "test": "Wilcoxon signed-rank",
+      "stat": 0.0,
+      "p": 2.5396285894708567e-10,
+      "significant": true,
+      "cohen_d": -1.414213559373095,
+      "ci_95": [
+        -0.7833333333333333,
+        -0.55
+      ],
+      "label_a": "NaSh",
+      "label_b": "TraditionalCLI",
+      "mean_a": 0.3333333333333333,
+      "mean_b": 1.0
+    }
+  ]
+}

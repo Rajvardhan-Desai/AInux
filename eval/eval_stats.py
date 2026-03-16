@@ -16,16 +16,21 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
-import matplotlib
+matplotlib = importlib.import_module("matplotlib")
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+plt = importlib.import_module("matplotlib.pyplot")
 import numpy as np
 from scipy import stats
+
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +124,7 @@ def paired_test(
         "test": test_name,
         "stat": float(stat),
         "p": float(p),
-        "significant": p < 0.05,
+        "significant": bool(p < 0.05),
         "cohen_d": d,
         "ci_95": (ci_lo, ci_hi),
         "label_a": label_a,
@@ -153,7 +158,11 @@ SYSTEMS = ["TraditionalCLI", "NaSh", "AInux"]
 LABELS  = {"TraditionalCLI": "Traditional CLI", "NaSh": "NaSh (baseline)", "AInux": "AInux (ours)"}
 
 
-def fig_accuracy_by_category(sys_results: Dict[str, List[Dict]], outdir: str) -> None:
+def available_systems(sys_results: Dict[str, List[Dict]]) -> List[str]:
+    return [s for s in SYSTEMS if sys_results.get(s)]
+
+
+def fig_accuracy_by_category(sys_results: Dict[str, List[Dict]], outdir: str, systems_to_plot: List[str]) -> None:
     categories = ["T1", "T2", "T3", "T4", "T5"]
     cat_labels  = ["File Ops", "Packages", "Diagnostics", "Web/SSL", "Dev Setup"]
 
@@ -161,13 +170,17 @@ def fig_accuracy_by_category(sys_results: Dict[str, List[Dict]], outdir: str) ->
     x = np.arange(len(categories))
     width = 0.25
 
-    for i, sys in enumerate(SYSTEMS):
+    if not systems_to_plot:
+        return
+
+    width = 0.8 / len(systems_to_plot)
+    for i, sys in enumerate(systems_to_plot):
         records = sys_results.get(sys, [])
         cat_acc = []
         for cat in categories:
             cat_recs = [r for r in records if r["category"] == cat]
             cat_acc.append(accuracy(cat_recs) * 100)
-        offset = (i - 1) * width
+        offset = (i - (len(systems_to_plot) - 1) / 2) * width
         bars = ax.bar(x + offset, cat_acc, width, label=LABELS[sys],
                       color=COLORS[sys], edgecolor="white", linewidth=0.8)
         for bar, val in zip(bars, cat_acc):
@@ -191,21 +204,27 @@ def fig_accuracy_by_category(sys_results: Dict[str, List[Dict]], outdir: str) ->
     print("[Stats] Saved fig_accuracy_by_category.png")
 
 
-def fig_latency_comparison(sys_results: Dict[str, List[Dict]], outdir: str) -> None:
+def fig_latency_comparison(sys_results: Dict[str, List[Dict]], outdir: str, systems_to_plot: List[str]) -> None:
     fig, ax = plt.subplots(figsize=(6, 4))
 
     data = []
     labels = []
-    for sys in SYSTEMS:
+    plotted_systems = []
+    for sys in systems_to_plot:
         lats = [r["latency"] for r in sys_results.get(sys, [])
                 if r["latency"] is not None and r["latency"] > 0]
         if lats:
             data.append(lats)
             labels.append(LABELS[sys])
+            plotted_systems.append(sys)
+
+    if not data:
+        plt.close()
+        return
 
     bp = ax.boxplot(data, patch_artist=True, notch=False,
                     medianprops=dict(color="black", linewidth=2))
-    for patch, sys in zip(bp["boxes"], SYSTEMS):
+    for patch, sys in zip(bp["boxes"], plotted_systems):
         patch.set_facecolor(COLORS[sys])
         patch.set_alpha(0.8)
 
@@ -222,7 +241,7 @@ def fig_latency_comparison(sys_results: Dict[str, List[Dict]], outdir: str) -> N
     print("[Stats] Saved fig_latency.png")
 
 
-def fig_safety_classification(sys_results: Dict[str, List[Dict]], outdir: str) -> None:
+def fig_safety_classification(sys_results: Dict[str, List[Dict]], outdir: str, systems_to_plot: List[str]) -> None:
     """
     For AInux and NaSh: show true-positive block rate vs false-positive block rate.
     """
@@ -233,7 +252,12 @@ def fig_safety_classification(sys_results: Dict[str, List[Dict]], outdir: str) -
                          "Miss\n(dangerous passed)"]
 
     # We count blocked records
-    for sys in ["NaSh", "AInux"]:
+    safety_systems = [s for s in ["NaSh", "AInux"] if s in systems_to_plot]
+    if not safety_systems:
+        plt.close()
+        return
+
+    for idx, sys in enumerate(safety_systems):
         records = sys_results.get(sys, [])
         tp = sum(1 for r in records if r.get("blocked") and not r.get("false_positive"))
         fp = sum(1 for r in records if r.get("false_positive"))
@@ -241,7 +265,8 @@ def fig_safety_classification(sys_results: Dict[str, List[Dict]], outdir: str) -
         vals = [tp / total * 100, fp / total * 100,
                 (total - tp - fp) / total * 100]
         x = np.arange(len(categories_safety))
-        ax.bar(x + (0.2 if sys == "AInux" else -0.2), vals, 0.35,
+        offset = (idx - (len(safety_systems) - 1) / 2) * 0.35
+        ax.bar(x + offset, vals, 0.35,
                label=LABELS[sys], color=COLORS[sys], alpha=0.85, edgecolor="white")
 
     ax.set_xticks(np.arange(len(categories_safety)))
@@ -259,9 +284,12 @@ def fig_safety_classification(sys_results: Dict[str, List[Dict]], outdir: str) -
     print("[Stats] Saved fig_safety.png")
 
 
-def fig_overall_accuracy(sys_results: Dict[str, List[Dict]], outdir: str) -> None:
+def fig_overall_accuracy(sys_results: Dict[str, List[Dict]], outdir: str, systems_to_plot: List[str]) -> None:
     fig, ax = plt.subplots(figsize=(5, 4))
-    systems = SYSTEMS
+    if not systems_to_plot:
+        plt.close()
+        return
+    systems = systems_to_plot
     accs = [accuracy(sys_results.get(s, [])) * 100 for s in systems]
     labels = [LABELS[s] for s in systems]
     colors = [COLORS[s] for s in systems]
@@ -307,7 +335,7 @@ def latex_accuracy_table(sys_results: Dict[str, List[Dict]]) -> str:
         row = [label]
         for sys in SYSTEMS:
             recs = [r for r in sys_results.get(sys, []) if r["category"] == cat]
-            row.append(f"{accuracy(recs)*100:.1f}")
+            row.append(f"{accuracy(recs)*100:.1f}" if recs else "N/A")
         lines.append(" & ".join(row) + r" \\")
 
     lines.append(r"\midrule")
@@ -315,7 +343,7 @@ def latex_accuracy_table(sys_results: Dict[str, List[Dict]]) -> str:
     row = [r"\textbf{Overall}"]
     for sys in SYSTEMS:
         recs = sys_results.get(sys, [])
-        row.append(r"\textbf{" + f"{accuracy(recs)*100:.1f}" + r"}")
+        row.append(r"\textbf{" + (f"{accuracy(recs)*100:.1f}" if recs else "N/A") + r"}")
     lines.append(" & ".join(row) + r" \\")
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")
@@ -361,6 +389,14 @@ def run_analysis(results_path: str, outdir: str) -> None:
 
     results = load_results(results_path)
     sys_results = by_system(results)
+    systems_present = available_systems(sys_results)
+
+    print(f"[Stats] Using results file: {results_path}")
+    print(f"[Stats] Writing figures to: {outdir}")
+    print(f"[Stats] Systems in results: {', '.join(systems_present) if systems_present else 'none'}")
+    missing = [s for s in SYSTEMS if s not in systems_present]
+    if missing:
+        print(f"[Stats] Missing systems will be shown as N/A: {', '.join(missing)}")
 
     print("\n" + "="*60)
     print("AInux Evaluation Results")
@@ -369,6 +405,13 @@ def run_analysis(results_path: str, outdir: str) -> None:
     # Overall accuracy
     for sys in SYSTEMS:
         recs = sys_results.get(sys, [])
+        if not recs:
+            print(f"\n  {LABELS[sys]}")
+            print("    Overall accuracy : N/A  (no records)")
+            print("    Mean latency     : N/A")
+            print("    False-positive   : N/A")
+            continue
+
         acc = accuracy(recs) * 100
         lat = mean_latency(recs)
         fpr = false_positive_rate(recs) * 100
@@ -417,16 +460,16 @@ def run_analysis(results_path: str, outdir: str) -> None:
         row = []
         for sys in SYSTEMS:
             recs = [r for r in sys_results.get(sys, []) if r["category"] == cat]
-            row.append(f"{accuracy(recs)*100:.1f}%")
+            row.append(f"{accuracy(recs)*100:.1f}%" if recs else "N/A")
         print(f"  {cat:<18} {row[0]:>8} {row[1]:>8} {row[2]:>8}")
 
     # Figures
     print("\n" + "-"*60)
     print("Generating figures...")
-    fig_accuracy_by_category(sys_results, outdir)
-    fig_latency_comparison(sys_results, outdir)
-    fig_safety_classification(sys_results, outdir)
-    fig_overall_accuracy(sys_results, outdir)
+    fig_accuracy_by_category(sys_results, outdir, systems_present)
+    fig_latency_comparison(sys_results, outdir, systems_present)
+    fig_safety_classification(sys_results, outdir, systems_present)
+    fig_overall_accuracy(sys_results, outdir, systems_present)
 
     # LaTeX tables
     print("\n" + "-"*60)
@@ -441,12 +484,15 @@ def run_analysis(results_path: str, outdir: str) -> None:
     summary = {
         "overall": {
             sys: {
-                "accuracy": accuracy(sys_results.get(sys, [])),
-                "mean_latency": mean_latency(sys_results.get(sys, [])),
-                "false_positive_rate": false_positive_rate(sys_results.get(sys, [])),
+                "accuracy": (accuracy(sys_results.get(sys, [])) if sys_results.get(sys, []) else None),
+                "mean_latency": (mean_latency(sys_results.get(sys, [])) if sys_results.get(sys, []) else None),
+                "false_positive_rate": (
+                    false_positive_rate(sys_results.get(sys, [])) if sys_results.get(sys, []) else None
+                ),
             }
             for sys in SYSTEMS
         },
+        "systems_present": systems_present,
         "statistical_tests": test_results,
     }
     with open(summary_path, "w") as f:
@@ -456,10 +502,17 @@ def run_analysis(results_path: str, outdir: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="AInux Statistical Analysis")
-    parser.add_argument("--results", default="results.json")
-    parser.add_argument("--outdir",  default="figures")
+    parser.add_argument("--results", default=None)
+    parser.add_argument("--outdir",  default=None)
     args = parser.parse_args()
-    run_analysis(args.results, args.outdir)
+
+    default_results = os.path.join(REPO_ROOT, "results.json")
+    if not os.path.exists(default_results):
+        default_results = os.path.join(SCRIPT_DIR, "results.json")
+    results_path = os.path.abspath(args.results) if args.results else default_results
+
+    outdir = os.path.abspath(args.outdir) if args.outdir else os.path.join(REPO_ROOT, "figures")
+    run_analysis(results_path, outdir)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ Implements KV-cache awareness and dynamic batching described in paper Sec III.C.
 from __future__ import annotations
 
 import json
+import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -25,9 +27,24 @@ import requests
 # Configuration
 # ---------------------------------------------------------------------------
 
+DEFAULT_OLLAMA_HOST = (
+    os.getenv("AINUX_OLLAMA_HOST")
+    or os.getenv("OLLAMA_HOST")
+    or "http://127.0.0.1:12345"
+)
+
+
+def normalize_ollama_host(host: str) -> str:
+    host = (host or DEFAULT_OLLAMA_HOST).strip()
+    if host.isdigit():
+        return f"http://127.0.0.1:{host}"
+    if "://" not in host:
+        return f"http://{host}"
+    return host
+
 @dataclass
 class OllamaConfig:
-    host: str    = "http://localhost:11434"
+    host: str = field(default_factory=lambda: DEFAULT_OLLAMA_HOST)
     model: str   = "phi3:mini"          # fits comfortably in 8GB
     temperature: float = 0.1            # low = deterministic commands
     timeout: int = 60
@@ -35,6 +52,9 @@ class OllamaConfig:
     context_window: int = 4096
     # Quantization hint for paper metrics (actual quantization is done by Ollama)
     quantization_bits: int = 4
+
+    def __post_init__(self) -> None:
+        self.host = normalize_ollama_host(self.host)
 
 
 # ---------------------------------------------------------------------------
@@ -92,10 +112,14 @@ class LocalLLMRuntime:
                 else:
                     print(f"[AInux LLM] Connected to Ollama — model: {self.config.model}")
             else:
-                print(f"[AInux LLM] Ollama responded with status {resp.status_code}")
+                print(
+                    f"[AInux LLM] Ollama at {self.config.host} responded with "
+                    f"status {resp.status_code}"
+                )
         except requests.ConnectionError:
             print(
-                "[AInux LLM] Ollama not running. Start it with: ollama serve\n"
+                f"[AInux LLM] Ollama not reachable at {self.config.host}. "
+                "Start it with: ollama serve\n"
                 f"[AInux LLM] Then pull a model: ollama pull {self.config.model}"
             )
         except Exception as e:
@@ -119,7 +143,7 @@ class LocalLLMRuntime:
         Returns the command string, or None on failure.
         """
         if not self.available:
-            return None
+            return self._regex_fallback(user_input)
 
         prompt = self._build_prompt(user_input, context, platform)
 
@@ -139,7 +163,7 @@ class LocalLLMRuntime:
                 if attempt < self.config.max_retries - 1:
                     time.sleep(1)
 
-        return None
+        return self._regex_fallback(user_input)
 
     def generate_plan(
         self,
@@ -217,7 +241,9 @@ class LocalLLMRuntime:
             timeout=self.config.timeout,
         )
         resp.raise_for_status()
-        return resp.json().get("response", "").strip()
+        raw_output = resp.json().get("response", "")
+        print(f"[AInux LLM][DEBUG] raw_output={raw_output!r}")
+        return raw_output.strip()
 
     # ------------------------------------------------------------------
     # Response parsing
@@ -241,13 +267,13 @@ class LocalLLMRuntime:
 
         command = raw.strip()
 
-        # Strip markdown code fences
-        if command.startswith("```"):
-            lines = command.split("\n")
-            command = "\n".join(
-                l for l in lines
-                if not l.startswith("```") and l.strip()
-            )
+        # Strip markdown code fences (single-line and multi-line)
+        # Example: ```bash\nls -la\n``` or ```bash ls -la ```
+        command = re.sub(r"^```[a-zA-Z0-9_-]*\s*\n?", "", command)
+        command = re.sub(r"\n?```$", "", command).strip()
+        if command.startswith("```") and "```" in command[3:]:
+            command = re.sub(r"^```.*?\n", "", command, flags=re.DOTALL)
+            command = re.sub(r"```$", "", command).strip()
 
         # Bail on clarification requests
         if "AINUX_CLARIFY" in command:
@@ -265,6 +291,23 @@ class LocalLLMRuntime:
             return None
 
         return command
+
+    def _regex_fallback(self, text: str) -> Optional[str]:
+        """Minimal fallback when Ollama is unavailable or generation fails."""
+        lower = text.lower()
+        if re.search(r"list.*files|show.*files|ls", lower):
+            return "ls -la"
+        if re.search(r"current.*dir|where.*am|pwd", lower):
+            return "pwd"
+        if re.search(r"disk.*space|disk.*usage", lower):
+            return "df -h"
+        if re.search(r"memory", lower):
+            return "free -h"
+        if re.search(r"processes", lower):
+            return "ps aux"
+        if re.search(r"uptime", lower):
+            return "uptime"
+        return None
 
     def _extract_plan(self, raw: str, max_steps: int) -> List[str]:
         """Parse a numbered list of commands from plan response."""

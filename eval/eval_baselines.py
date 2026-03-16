@@ -1,3 +1,6 @@
+from __future__ import annotations
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 """
 AInux Evaluation Baselines
 Three systems under comparison:
@@ -11,8 +14,6 @@ Three systems under comparison:
 [1] Gyawali et al., "NaSh: Guardrails for an LLM-Powered Natural
     Language Shell," arXiv:2506.13028, 2025.
 """
-
-from __future__ import annotations
 
 import re
 import subprocess
@@ -154,7 +155,7 @@ class NaShBaseline(BaseSystem):
     in the automated harness (mimics a user who proceeds through warnings).
     """
 
-    def __init__(self, ollama_host: str = "http://localhost:11434",
+    def __init__(self, ollama_host: str = "http://127.0.0.1:12345",
                  model: str = "phi3:mini"):
         self.ollama_host = ollama_host
         self.model = model
@@ -274,27 +275,27 @@ class AInuxSystem(BaseSystem):
     Full AInux: local LLM + FAISS memory + MDP safety + agents.
     """
 
-    def __init__(self, ollama_host: str = "http://localhost:11434",
+    def __init__(self, ollama_host: str = "http://127.0.0.1:12345",
                  model: str = "phi3:mini"):
         import sys, os
         # Allow importing from parent directory
-        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            if repo_root not in sys.path:
-                sys.path.insert(0, repo_root)
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
         try:
-            from AInux.ainux_llm_runtime import LocalLLMRuntime, OllamaConfig
-            from AInux.ainux_memory import AInuxMemory
-            from AInux.ainux_safety import MDPSafetyChecker
-            from AInux.ainux_agents import AgentDispatcher
+            from ainux_llm_runtime import LocalLLMRuntime, OllamaConfig
+            from ainux_memory import AInuxMemory
+            from ainux_safety import MDPSafetyChecker, ConfirmationLevel
+
+            self._confirmation_level_block = ConfirmationLevel.BLOCK
 
             cfg = OllamaConfig(host=ollama_host, model=model)
             self.llm = LocalLLMRuntime(cfg)
             self.memory = AInuxMemory(persist=False)   # no disk I/O during eval
             self.safety = MDPSafetyChecker()
-            self.dispatcher = AgentDispatcher(self.llm, self.safety)
             self._available = True
         except ImportError as e:
-            print(f"[AInuxSystem] Import error: {e}")
+            print(f"[AInuxSystem] Import error: {e}", flush=True); import traceback; traceback.print_exc()
             self._available = False
 
     def process(self, natural_language: str, task_id: str) -> SystemResult:
@@ -335,9 +336,7 @@ class AInuxSystem(BaseSystem):
 
         # MDP safety validation
         validation = self.safety.validate_command(command)
-
-        from AInux.ainux_safety import ConfirmationLevel
-        if validation.confirmation == ConfirmationLevel.BLOCK:
+        if validation.confirmation == self._confirmation_level_block:
             return SystemResult(
                 system_name="AInux",
                 task_id=task_id,
@@ -371,3 +370,4 @@ class AInuxSystem(BaseSystem):
             latency_seconds=time.time() - t0,
             output=output, error=error,
         )
+

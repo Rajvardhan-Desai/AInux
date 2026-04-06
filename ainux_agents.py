@@ -2,21 +2,18 @@
 AInux Autonomous Agents
 Implements the agent execution framework described in paper Sections IV and V.
 
-Each agent follows the POMDP model:
-  (S, A, T, R, O, Ω)
-
-And the lifecycle:
-  1. Receive intent + memory context
-  2. Generate plan via LLM
-  3. Validate with safety layer
-  4. Execute with checkpointing
+Each agent follows a plan-execute-verify lifecycle:
+  1. Receive intent and memory context
+  2. Generate a full plan via the LLM
+  3. Validate each step with the four-tier risk scoring safety layer
+  4. Execute with file-level checkpointing; restore on failure
   5. Verify outcomes
-  6. Summarize in natural language
+  6. Return a natural language summary
 
-Three agents implemented:
-  - PackageManagementAgent
-  - FileOperationsAgent
-  - SystemDiagnosticsAgent
+Three agents are implemented:
+  - PackageManagementAgent  (apt, pip, npm)
+  - FileOperationsAgent      (files, directories, permissions)
+  - SystemDiagnosticsAgent   (read-only diagnostics; SAFE commands only)
 """
 
 from __future__ import annotations
@@ -33,7 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .ainux_safety import ConfirmationLevel, MDPSafetyChecker, ValidationResult
+from .ainux_safety import ConfirmationLevel, RiskScoringChecker, ValidationResult
 from .ainux_llm_runtime import LocalLLMRuntime
 
 logger = logging.getLogger("ainux.agents")
@@ -56,7 +53,7 @@ class AgentResult:
 
 @dataclass
 class Checkpoint:
-    """Snapshot taken before a risky command for rollback purposes."""
+    """Snapshot created before a risky command to enable rollback."""
     timestamp: float
     command: str
     backup_paths: List[str] = field(default_factory=list)
@@ -70,10 +67,13 @@ class Checkpoint:
 class BaseAgent(ABC):
     """
     Abstract base for all AInux agents.
-    Implements the planner-verifier loop with checkpointing.
+    Implements the planner-verifier loop with file-level checkpointing.
+
+    Safety validation uses the four-tier risk scoring framework
+    (paper Section III.E, Eq. 2–3) before each command is executed.
     """
 
-    def __init__(self, llm: LocalLLMRuntime, safety: MDPSafetyChecker):
+    def __init__(self, llm: LocalLLMRuntime, safety: RiskScoringChecker):
         self.llm = llm
         self.safety = safety
         self._checkpoints: List[Checkpoint] = []
@@ -93,10 +93,10 @@ class BaseAgent(ABC):
         confirm_callback(command, reason) -> bool  (True = proceed)
         """
         t0 = time.time()
-        executed = []
-        outputs = []
+        executed: List[str] = []
+        outputs: List[str] = []
 
-        # Step 1-2: Generate plan
+        # Steps 1–2: Generate plan
         plan = self._generate_plan(intent, context)
         if not plan:
             return AgentResult(
@@ -107,14 +107,14 @@ class BaseAgent(ABC):
                 duration_seconds=time.time() - t0,
             )
 
-        # Step 3: Validate plan
+        # Step 3: Validate plan (Eq. 2 — product of individual scores)
         plan_score, validations = self.safety.validate_plan(plan)
         logger.info(f"Plan safety score: {plan_score:.3f}")
 
         # Step 4: Execute with checkpointing
         for cmd, validation in zip(plan, validations):
 
-            # Hard block
+            # Hard block (DANGEROUS tier, score=0.0)
             if validation.confirmation == ConfirmationLevel.BLOCK:
                 return AgentResult(
                     success=False,
@@ -124,7 +124,7 @@ class BaseAgent(ABC):
                     duration_seconds=time.time() - t0,
                 )
 
-            # Needs user confirmation
+            # Needs user confirmation (RISKY tier, score=0.3, or root escalation)
             if validation.confirmation == ConfirmationLevel.CONFIRM:
                 if confirm_callback:
                     proceed = confirm_callback(cmd, validation.reason)
@@ -139,7 +139,7 @@ class BaseAgent(ABC):
                         duration_seconds=time.time() - t0,
                     )
 
-            # Take checkpoint before risky/reversible operations
+            # Take checkpoint before risky or reversible operations
             if validation.action_class.value in ("risky", "reversible"):
                 self._take_checkpoint(cmd)
 
@@ -151,7 +151,7 @@ class BaseAgent(ABC):
                 if result["output"]:
                     outputs.append(result["output"])
             else:
-                # Attempt rollback
+                # Attempt rollback to most recent checkpoint
                 rolled = self._rollback()
                 return AgentResult(
                     success=False,
@@ -162,7 +162,7 @@ class BaseAgent(ABC):
                     duration_seconds=time.time() - t0,
                 )
 
-        # Step 5-7: Verify and summarise
+        # Steps 5–6: Verify and summarise
         summary = self._summarize(intent, executed, "\n".join(outputs))
 
         return AgentResult(
@@ -174,12 +174,12 @@ class BaseAgent(ABC):
         )
 
     # ------------------------------------------------------------------
-    # Abstract hooks for subclasses
+    # Abstract hooks
     # ------------------------------------------------------------------
 
     @abstractmethod
     def _generate_plan(self, intent: str, context: Optional[str]) -> List[str]:
-        """Generate ordered list of shell commands for the intent."""
+        """Generate an ordered list of shell commands for the intent."""
         ...
 
     @abstractmethod
@@ -192,6 +192,14 @@ class BaseAgent(ABC):
     # ------------------------------------------------------------------
 
     def _execute_command(self, command: str) -> Dict:
+        """
+        Execute a shell command and return a result dict.
+
+        Uses a list-form invocation where possible; shell=True is required
+        here because commands may include pipes and redirections that are
+        generated by the LLM for diagnostic tasks. The safety layer
+        validates commands before this method is called.
+        """
         try:
             result = subprocess.run(
                 command, shell=True,
@@ -205,7 +213,7 @@ class BaseAgent(ABC):
                 "return_code": result.returncode,
             }
         except subprocess.TimeoutExpired:
-            return {"success": False, "output": "", "error": "Command timed out after 60s"}
+            return {"success": False, "output": "", "error": "Command timed out after 60 s"}
         except Exception as e:
             return {"success": False, "output": "", "error": str(e)}
 
@@ -214,7 +222,13 @@ class BaseAgent(ABC):
     # ------------------------------------------------------------------
 
     def _take_checkpoint(self, command: str) -> None:
-        """Create a lightweight checkpoint before executing a command."""
+        """
+        Create a lightweight checkpoint before executing a risky/reversible
+        command by backing up any file paths referenced in the command.
+
+        Uses tempfile.mkstemp() to create backup files atomically and
+        securely (avoids the TOCTOU race condition of mktemp()).
+        """
         checkpoint = Checkpoint(timestamp=time.time(), command=command)
 
         file_args = re.findall(
@@ -224,12 +238,19 @@ class BaseAgent(ABC):
         for path in file_args:
             p = Path(path)
             if p.is_file():
-                tmp = tempfile.mktemp(suffix=f"_{p.name}.ainux_bak")
+                # mkstemp returns (fd, name); close the fd before copying into it
+                fd, tmp = tempfile.mkstemp(suffix=f"_{p.name}.ainux_bak")
                 try:
+                    os.close(fd)
                     shutil.copy2(str(p), tmp)
                     checkpoint.backup_paths.append(f"{path}:{tmp}")
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Clean up the temp file if the copy failed
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+                    logger.warning(f"Checkpoint failed for {path}: {exc}")
 
         self._checkpoints.append(checkpoint)
         logger.debug(f"Checkpoint created for: {command}")
@@ -260,7 +281,7 @@ class BaseAgent(ABC):
     # ------------------------------------------------------------------
 
     def _summarize(self, intent: str, commands: List[str], output: str) -> str:
-        """Ask LLM to summarise what was accomplished."""
+        """Ask the LLM to summarise what was accomplished."""
         if not self.llm.is_available():
             return f"Completed {len(commands)} step(s) for: {intent}"
         prompt = (
@@ -270,7 +291,6 @@ class BaseAgent(ABC):
             f"Output snippet: {output[:300]}"
         )
         try:
-            # Use _call_llm (Chat Completion API endpoint)
             response = self.llm._call_llm(prompt)
             return response.strip() if response else f"Completed: {intent}"
         except Exception:
@@ -290,7 +310,7 @@ class BaseAgent(ABC):
 class PackageManagementAgent(BaseAgent):
     """
     Handles installation, updates, and dependency resolution.
-    Supports apt, pip, npm.
+    Supports apt/apt-get, pip, and npm.
     """
 
     PLAN_PROMPT_TEMPLATE = (
@@ -308,14 +328,12 @@ class PackageManagementAgent(BaseAgent):
         return "PackageManagement"
 
     def _generate_plan(self, intent: str, context: Optional[str]) -> List[str]:
-        # Try LLM first
         if self.llm.is_available():
             prompt = self.PLAN_PROMPT_TEMPLATE.format(
                 intent=intent,
                 context=context or "none",
             )
             try:
-                # _call_llm uses LM Studio /v1/chat/completions
                 response = self.llm._call_llm(prompt)
                 if response:
                     plan = self.llm._extract_plan(response, max_steps=10)
@@ -324,7 +342,6 @@ class PackageManagementAgent(BaseAgent):
             except Exception as e:
                 logger.warning(f"LLM plan generation failed: {e}")
 
-        # Regex fallback
         return self._regex_plan(intent)
 
     def _regex_plan(self, intent: str) -> List[str]:
@@ -354,7 +371,7 @@ class PackageManagementAgent(BaseAgent):
 class FileOperationsAgent(BaseAgent):
     """
     Manages files, directories, permissions, and batch operations.
-    Includes hierarchical path construction (paper Sec IV.B.1).
+    Includes hierarchical path construction (paper Section IV.B.1).
     """
 
     def domain(self) -> str:
@@ -372,7 +389,6 @@ class FileOperationsAgent(BaseAgent):
                 f"Commands:"
             )
             try:
-                # _call_llm uses LM Studio /v1/chat/completions
                 response = self.llm._call_llm(prompt)
                 if response:
                     plan = self.llm._extract_plan(response, max_steps=12)
@@ -386,7 +402,7 @@ class FileOperationsAgent(BaseAgent):
     def _regex_plan(self, intent: str) -> List[str]:
         lower = intent.lower()
 
-        # Hierarchical path construction (paper Sec IV.B.1)
+        # Hierarchical path construction (paper Section IV.B.1)
         m = re.search(r"create\s+(?:director(?:y|ies)|folder)\s+(.+)", lower)
         if m:
             path = m.group(1).strip().replace(" ", "/")
@@ -415,11 +431,12 @@ class FileOperationsAgent(BaseAgent):
 
 class SystemDiagnosticsAgent(BaseAgent):
     """
-    Monitors system health, analyses logs, identifies bottlenecks.
-    Read-only by design — all generated commands are classified SAFE.
+    Monitors system health, analyses logs, and identifies performance bottlenecks.
+    Read-only by design — all generated commands are validated as SAFE (score=1.0)
+    before execution; any non-SAFE command from the LLM is dropped.
     """
 
-    DIAGNOSTIC_COMMANDS = {
+    DIAGNOSTIC_COMMANDS: Dict[str, List[str]] = {
         "cpu":       ["top -bn1 | head -20", "mpstat 1 1"],
         "memory":    ["free -h", "vmstat -s | head -10"],
         "disk":      ["df -h", "du -sh /* 2>/dev/null | sort -rh | head -10"],
@@ -436,12 +453,12 @@ class SystemDiagnosticsAgent(BaseAgent):
     def _generate_plan(self, intent: str, context: Optional[str]) -> List[str]:
         lower = intent.lower()
 
-        # Keyword → diagnostic category shortcut
+        # Keyword shortcut → predefined safe diagnostic set
         for category, commands in self.DIAGNOSTIC_COMMANDS.items():
             if re.search(category, lower):
                 return commands
 
-        # LLM for complex diagnostics
+        # LLM fallback for complex or composite diagnostics
         if self.llm.is_available():
             prompt = (
                 f"You are a Linux diagnostics expert.\n"
@@ -451,12 +468,11 @@ class SystemDiagnosticsAgent(BaseAgent):
                 f"Commands:"
             )
             try:
-                # _call_llm uses LM Studio /v1/chat/completions
                 response = self.llm._call_llm(prompt)
                 if response:
                     plan = self.llm._extract_plan(response, max_steps=8)
                     if plan:
-                        # Safety gate: keep only SAFE-classified commands
+                        # Safety gate: keep only commands classified as SAFE
                         from .ainux_safety import classify_action, ActionClass
                         safe_plan = [
                             c for c in plan
@@ -475,11 +491,9 @@ class SystemDiagnosticsAgent(BaseAgent):
 # ---------------------------------------------------------------------------
 
 class AgentDispatcher:
-    """
-    Routes user intents to the appropriate agent.
-    """
+    """Routes user intents to the appropriate specialised agent."""
 
-    INTENT_PATTERNS = {
+    INTENT_PATTERNS: Dict[str, List[str]] = {
         "package": [
             r"\binstall\b", r"\bupgrade\b", r"\bupdate\b",
             r"\bapt\b", r"\bpip\b", r"\bnpm\b", r"\bremove package\b",
@@ -497,7 +511,7 @@ class AgentDispatcher:
         ],
     }
 
-    def __init__(self, llm: LocalLLMRuntime, safety: MDPSafetyChecker):
+    def __init__(self, llm: LocalLLMRuntime, safety: RiskScoringChecker):
         self.agents = {
             "package":     PackageManagementAgent(llm, safety),
             "file":        FileOperationsAgent(llm, safety),
@@ -511,7 +525,8 @@ class AgentDispatcher:
         confirm_callback=None,
     ) -> Tuple[str, AgentResult]:
         """
-        Route to best-matching agent. Returns (agent_name, AgentResult).
+        Route to the best-matching agent. Returns (agent_name, AgentResult).
+        Defaults to 'diagnostics' for unrecognised intents (safer than 'file').
         """
         lower = intent.lower()
 
@@ -523,7 +538,7 @@ class AgentDispatcher:
 
         best = max(scores, key=lambda k: scores[k])
         if scores[best] == 0:
-            best = "file"   # default for unrecognised intents
+            best = "diagnostics"   # safer default for unrecognised intents
 
         agent = self.agents[best]
         result = agent.run(intent, context=context, confirm_callback=confirm_callback)

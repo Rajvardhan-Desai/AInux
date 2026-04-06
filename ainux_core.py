@@ -1,15 +1,16 @@
 """
 AInux - AI-Native Linux Environment
 Main orchestrator integrating:
-  - Local LLM Runtime (Ollama)
-  - FAISS Memory Layer
-  - MDP Safety Framework
-  - Autonomous Agents
+  - Universal LLM Runtime (Chat Completion API standard)
+  - FAISS Memory Layer with three-tier persistence
+  - Four-tier Risk Scoring Safety Framework
+  - Autonomous Agents (package, file, diagnostics)
 
 Usage:
-    python ainux_core.py
-    python ainux_core.py --voice
-    python ainux_core.py --model phi3:mini
+    python -m AInux.ainux_core
+    python -m AInux.ainux_core --voice
+    python -m AInux.ainux_core --model phi3:mini
+    python -m AInux.ainux_core --host http://192.168.1.10:8000
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from .ainux_llm_runtime import (
     normalize_llm_host,
 )
 from .ainux_memory import AInuxMemory
-from .ainux_safety import ConfirmationLevel, MDPSafetyChecker
+from .ainux_safety import ConfirmationLevel, RiskScoringChecker
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +39,11 @@ from .ainux_safety import ConfirmationLevel, MDPSafetyChecker
 class AIShell:
     """
     Primary interface: natural language → intent → plan → safe execution.
-    Implements the AiShell described in paper Section III.A and IV.
+    Implements the AiShell described in paper Sections III.A and IV.
+
+    Routing:
+      Simple requests (single-command intent) → _handle_simple_command
+      Complex/multi-step requests              → _handle_agent_task
     """
 
     INTENT_CATEGORIES = [
@@ -53,7 +58,7 @@ class AIShell:
 
     def __init__(
         self,
-        model: str = "gpt-oss-20b-MXFP4", 
+        model: str = "gpt-oss-20b-MXFP4",
         llm_host: str = DEFAULT_LLM_HOST,
         persist_memory: bool = True,
     ):
@@ -65,10 +70,14 @@ class AIShell:
 
         # Memory
         self.memory = AInuxMemory(persist=persist_memory)
-        print(f"[AInux] Memory: {self.memory.stats()}")
+        stats = self.memory.stats()
+        print(
+            f"[AInux] Memory: {stats['total']} items "
+            f"(short={stats['short']}, mid={stats['mid']}, long={stats['long']})"
+        )
 
-        # Safety
-        self.safety = MDPSafetyChecker()
+        # Four-tier risk scoring safety framework
+        self.safety = RiskScoringChecker()
 
         # Agent dispatcher
         self.dispatcher = AgentDispatcher(self.llm, self.safety)
@@ -82,24 +91,34 @@ class AIShell:
 
     def _classify_intent(self, user_input: str) -> str:
         """
-        Intent = argmax_i P(i | U, C)   (Eq. 12)
-        Uses LLM when available, regex fallback otherwise.
+        Classify user input into one of the six intent categories.
+        Uses regex pattern matching; falls back to 'information_retrieval'.
         """
         import re
         lower = user_input.lower()
 
         intent_patterns = {
-            "file_operations":      [r"\bfile\b", r"\bfolder\b", r"\bdirector\b",
-                                     r"\bcreate\b", r"\bdelete\b", r"\brename\b",
-                                     r"\bcopy\b", r"\bmove\b", r"\blist files\b"],
-            "package_management":   [r"\binstall\b", r"\bupgrade\b", r"\bpip\b",
-                                     r"\bapt\b", r"\bnpm\b"],
-            "process_management":   [r"\bprocess\b", r"\bps\b", r"\bkill\b",
-                                     r"\bstart\b", r"\bstop\b", r"\brestart\b"],
-            "troubleshooting":      [r"\bdiagnos\b", r"\blog\b", r"\berror\b",
-                                     r"\bfix\b", r"\bdebug\b", r"\bmonitor\b"],
-            "information_retrieval":[r"\bshow\b", r"\blist\b", r"\bdisplay\b",
-                                     r"\bwhat\b", r"\bwhere\b", r"\bhow much\b"],
+            "file_operations": [
+                r"\bfile\b", r"\bfolder\b", r"\bdirector\b",
+                r"\bcreate\b", r"\bdelete\b", r"\brename\b",
+                r"\bcopy\b", r"\bmove\b", r"\blist files\b",
+            ],
+            "package_management": [
+                r"\binstall\b", r"\bupgrade\b", r"\bpip\b",
+                r"\bapt\b", r"\bnpm\b",
+            ],
+            "process_management": [
+                r"\bprocess\b", r"\bps\b", r"\bkill\b",
+                r"\bstart\b", r"\bstop\b", r"\brestart\b",
+            ],
+            "troubleshooting": [
+                r"\bdiagnos\b", r"\blog\b", r"\berror\b",
+                r"\bfix\b", r"\bdebug\b", r"\bmonitor\b",
+            ],
+            "information_retrieval": [
+                r"\bshow\b", r"\blist\b", r"\bdisplay\b",
+                r"\bwhat\b", r"\bwhere\b", r"\bhow much\b",
+            ],
         }
 
         scores = {}
@@ -120,15 +139,17 @@ class AIShell:
             return None
         lines = []
         for item, score in results:
-            lines.append(f"[Past: {item.intent}] {item.text} → {item.command} ({item.outcome})")
+            lines.append(
+                f"[Past: {item.intent}] {item.text} → {item.command} ({item.outcome})"
+            )
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
-    # Single command mode (simple requests)
+    # Single command mode
     # ------------------------------------------------------------------
 
     def _handle_simple_command(self, user_input: str, context: Optional[str]) -> None:
-        """For short, single-command requests."""
+        """Handle short, single-command requests."""
         command = self.llm.generate_command(user_input, context, self._platform)
 
         if not command:
@@ -136,7 +157,7 @@ class AIShell:
             print("        Try rephrasing, or type 'help' for examples.")
             return
 
-        # Validate
+        # Validate with four-tier risk scoring framework
         validation = self.safety.validate_command(command)
         print(f"\n  Generated command : {command}")
         print(f"  Safety            : {validation.action_class.value} (score={validation.score})")
@@ -164,13 +185,13 @@ class AIShell:
         )
 
         outcome = "success" if result.returncode == 0 else "failure"
-        print(f"\n{'─'*50}")
+        print(f"\n{'─' * 50}")
         print(f"  Status : {'SUCCESS' if outcome == 'success' else 'FAILED'}")
         if result.stdout.strip():
             print(f"  Output :\n{result.stdout.strip()}")
         if result.stderr.strip() and outcome == "failure":
             print(f"  Error  : {result.stderr.strip()}")
-        print(f"{'─'*50}")
+        print(f"{'─' * 50}")
 
         # Store in memory
         intent = self._classify_intent(user_input)
@@ -187,7 +208,7 @@ class AIShell:
     # ------------------------------------------------------------------
 
     def _handle_agent_task(self, user_input: str, context: Optional[str]) -> None:
-        """For multi-step tasks that require an autonomous agent."""
+        """Delegate multi-step tasks to the appropriate autonomous agent."""
 
         def confirm_cb(cmd: str, reason: str) -> bool:
             print(f"\n  [Agent] WARNING: {reason}")
@@ -195,24 +216,23 @@ class AIShell:
             ans = input("  Proceed? (YES to confirm): ").strip()
             return ans.upper() == "YES"
 
-        print(f"\n  [Agent] Planning task...")
+        print("\n  [Agent] Planning task...")
         agent_name, result = self.dispatcher.dispatch(
             user_input, context=context, confirm_callback=confirm_cb
         )
 
-        print(f"\n{'─'*50}")
+        print(f"\n{'─' * 50}")
         print(f"  Agent   : {agent_name}")
         print(f"  Status  : {'SUCCESS' if result.success else 'FAILED'}")
         print(f"  Steps   : {len(result.commands_executed)}")
-        print(f"  Time    : {result.duration_seconds:.1f}s")
+        print(f"  Time    : {result.duration_seconds:.1f} s")
 
         if result.commands_executed:
-            print(f"  Commands executed:")
+            print("  Commands executed:")
             for cmd in result.commands_executed:
                 print(f"    • {cmd}")
 
         if result.output:
-            # Truncate long output
             out = result.output
             if len(out) > 1000:
                 out = out[:1000] + "\n  [... truncated]"
@@ -222,16 +242,16 @@ class AIShell:
             print(f"  Error   : {result.error}")
 
         if result.rolled_back:
-            print(f"  [Agent] System rolled back to previous state.")
+            print("  [Agent] System rolled back to previous state.")
 
         if result.summary:
             print(f"  Summary : {result.summary}")
 
-        print(f"{'─'*50}")
+        print(f"{'─' * 50}")
 
-        # Store to memory
+        # Store each executed command to memory
+        intent = self._classify_intent(user_input)
         for cmd in result.commands_executed:
-            intent = self._classify_intent(user_input)
             self.memory.store(
                 text=user_input,
                 command=cmd,
@@ -246,8 +266,8 @@ class AIShell:
 
     def _is_multi_step(self, user_input: str) -> bool:
         """
-        Heuristic: route to agent if the request implies multiple operations
-        or is in a domain with a specialised agent.
+        Heuristic: route to an agent if the request implies multiple operations
+        or falls in a domain with a specialised agent.
         """
         import re
         lower = user_input.lower()
@@ -272,14 +292,16 @@ class AIShell:
         if len(self.memory._items) % 20 == 0 and len(self.memory._items) > 0:
             result = self.memory.consolidate()
             if result["promoted"] > 0:
-                print(f"  [Memory] Promoted {result['promoted']} item(s) to long-term memory.")
+                print(
+                    f"  [Memory] Promoted {result['promoted']} item(s) to long-term memory."
+                )
 
     # ------------------------------------------------------------------
-    # Interactive loop
+    # Interactive REPL
     # ------------------------------------------------------------------
 
     def run_interactive(self, voice: bool = False) -> None:
-        """Main interactive REPL."""
+        """Main interactive read-eval-print loop."""
         print("AInux — AI-Native Linux Shell")
         print("Type 'help' for examples, 'memory' for memory stats, 'exit' to quit.\n")
 
@@ -308,7 +330,12 @@ class AIShell:
                     self._show_help()
 
                 elif lower in ("memory", "mem"):
-                    print(f"\n  Memory stats: {self.memory.stats()}\n")
+                    stats = self.memory.stats()
+                    print(
+                        f"\n  Memory: {stats['total']} items "
+                        f"(short={stats['short']}, mid={stats['mid']}, "
+                        f"long={stats['long']}, index={stats['index_size']})\n"
+                    )
 
                 elif lower in ("status", "mode", "info"):
                     self._show_status()
@@ -372,12 +399,17 @@ class AIShell:
 
     def _show_status(self) -> None:
         llm_status = "connected" if self.llm.is_available() else "offline (regex fallback active)"
+        stats = self.memory.stats()
+        mem_str = (
+            f"{stats['total']} items "
+            f"(short={stats['short']}, mid={stats['mid']}, long={stats['long']})"
+        )
         print(f"""
   AInux Status
   ─────────────────────────────────────────
   LLM       : {self.llm.config.model} — {llm_status}
-  Memory    : {self.memory.stats()}
-  Safety    : MDP checker active
+  Memory    : {mem_str}
+  Safety    : four-tier risk scoring framework active
   Agents    : PackageManagement, FileOperations, SystemDiagnostics
   Platform  : {platform.system()} {platform.release()}
 """)
@@ -390,12 +422,15 @@ class AIShell:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AInux — AI-Native Linux Shell")
     parser.add_argument("--model", default="gpt-oss-20b-MXFP4")
-    parser.add_argument("--host",   default=DEFAULT_LLM_HOST,
-                        help="Chat Completion API endpoint (local or cloud)")
-    parser.add_argument("--voice",  action="store_true",
-                        help="Enable voice input")
-    parser.add_argument("--no-persist", action="store_true",
-                        help="Disable memory persistence (no disk writes)")
+    parser.add_argument(
+        "--host", default=DEFAULT_LLM_HOST,
+        help="Chat Completion API endpoint URL (local or cloud)"
+    )
+    parser.add_argument("--voice", action="store_true", help="Enable voice input")
+    parser.add_argument(
+        "--no-persist", action="store_true",
+        help="Disable memory persistence (no disk writes)"
+    )
     args = parser.parse_args()
 
     shell = AIShell(

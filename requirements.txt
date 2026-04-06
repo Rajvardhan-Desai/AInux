@@ -3,6 +3,7 @@
 requests>=2.31.0
 faiss-cpu>=1.7.4
 sentence-transformers>=2.6.0
+scikit-learn>=1.3.0
 python-dotenv>=1.0.0
 
 # Optional voice input

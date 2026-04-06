@@ -16,8 +16,12 @@ Environment variables:
   - AINUX_LLM_API_KEY (optional, for remote/proprietary services)
   - Legacy: AINUX_OLLAMA_HOST, OLLAMA_HOST (still supported)
 
-Implements the Chat Completion API standard interface.
-KV-cache awareness and dynamic batching described in paper Sec III.C.
+Command generation uses a two-pass strategy (paper Section VII):
+  Pass 1: temperature=0.1 (near-deterministic output)
+  Pass 2: temperature=0.3, triggered only when pass 1 produces a compound
+          command containing && or ;
+A post-processing sanitiser strips residual sudo prefixes and placeholder
+paths before the command reaches the safety classifier.
 """
 
 from __future__ import annotations
@@ -40,14 +44,14 @@ DEFAULT_LLM_HOST = (
     os.getenv("AINUX_LLM_HOST")
     or os.getenv("AINUX_OLLAMA_HOST")   # legacy env vars for backward compatibility
     or os.getenv("OLLAMA_HOST")
-    or "http://127.0.0.1:1234"          # LM Studio default (also works with local Ollama/Vllm)
+    or "http://127.0.0.1:1234"          # LM Studio default
 )
 
 DEFAULT_LLM_API_KEY = os.getenv("AINUX_LLM_API_KEY")
 
 
 def normalize_llm_host(host: str) -> str:
-    """Normalize LLM endpoint URL to standard format."""
+    """Normalise LLM endpoint URL to a standard http(s)://host:port form."""
     host = (host or DEFAULT_LLM_HOST).strip()
     if host.isdigit():
         return f"http://127.0.0.1:{host}"
@@ -58,11 +62,11 @@ def normalize_llm_host(host: str) -> str:
 
 @dataclass
 class LLMRuntimeConfig:
-    """Configuration for Chat Completion API endpoint."""
+    """Configuration for a Chat Completion API endpoint."""
     host: str = field(default_factory=lambda: DEFAULT_LLM_HOST)
     model: str = "gpt-oss-20b-MXFP4"
-    api_key: Optional[str] = field(default_factory=lambda: DEFAULT_LLM_API_KEY)  # For cloud providers requiring auth
-    temperature: float = 0.1            # low = deterministic commands
+    api_key: Optional[str] = field(default_factory=lambda: DEFAULT_LLM_API_KEY)
+    temperature: float = 0.1            # low = near-deterministic commands
     timeout: int = 120
     max_retries: int = 3
     context_window: int = 4096
@@ -72,7 +76,7 @@ class LLMRuntimeConfig:
         self.host = normalize_llm_host(self.host)
 
 
-# Keep backward compatibility aliases
+# Keep backward-compatibility aliases
 OllamaConfig = LLMRuntimeConfig
 normalize_ollama_host = normalize_llm_host
 DEFAULT_OLLAMA_HOST = DEFAULT_LLM_HOST
@@ -84,46 +88,51 @@ DEFAULT_OLLAMA_HOST = DEFAULT_LLM_HOST
 
 class LocalLLMRuntime:
     """
-    Universal LLM runtime adapter using Chat Completion API standard.
+    Universal LLM runtime adapter using the Chat Completion API standard.
 
-    Works with any endpoint implementing the Chat Completion API standard:
-      - Local: LM Studio, Ollama, Vllm, etc.
-      - Cloud: OpenAI, Azure, Anthropic (via proxy), etc.
+    Works with any endpoint that implements /v1/chat/completions:
+      - Local:       LM Studio, Ollama, Vllm, llama.cpp server
+      - Cloud:       OpenAI, Azure OpenAI, Anthropic (via proxy)
       - Self-hosted: LLaMA, Mistral, Falcon servers
 
-    Implements the inference optimisation described in the paper:
-      T_inf = T_prompt + N_tokens * T_decode      (Eq. 4)
-
-    All HTTP calls use /v1/chat/completions (Chat Completion API standard).
-    This is a widely-adopted open specification, not vendor-specific.
+    Command generation uses a two-pass strategy (paper Section VII):
+      Pass 1  temperature=0.1  →  near-deterministic output
+      Pass 2  temperature=0.3  →  triggered only when pass 1 produces a
+              compound command (contains && or ;)
+    A post-processing sanitiser strips residual sudo prefixes and
+    placeholder paths before the command reaches the safety classifier.
     """
 
-    SYSTEM_PROMPT = (
-    "You are AInux, an expert Linux system administration assistant.\n"
-    "Convert natural language instructions into safe shell commands.\n\n"
-    "STRICT RULES — follow all of them:\n"
-    "1. Output EXACTLY ONE shell command. No explanations, no markdown, "
-       "no backticks, no code fences, no comments.\n"
-    "2. NEVER use && or ; to chain commands. One command only.\n"
-    "3. NEVER add sudo unless the user explicitly says 'as root' or 'with sudo'.\n"
-    "4. NEVER use placeholder paths like /path/to/ or <your-path>. "
-       "Use the exact names from the request.\n"
-    "5. NEVER add echo, verification steps, or output decorators.\n"
-    "6. Use apt-get (not sudo apt-get) for package operations.\n"
-    "7. If the request is ambiguous or unsafe, output: AINUX_CLARIFY\n"
-    "8. Use Linux/Debian commands unlessLLMRuntimeConfig] = None):
-        self.config = config or LLMRuntime
-    "  apt-get install -y nginx\n"
-    "  systemctl reload nginx\n"
-    "  find . -type f -name '*.py'\n\n"
-    "Examples of WRONG output (never do these):\n"
-    "  sudo apt-get update && sudo apt-get install nginx   ← two commands\n"
-    "  sudo systemctl start nginx                          ← unnecessary sudo\n"
-    "  source /path/to/venv/bin/activate                  ← placeholder path\n"
-)
+    # ------------------------------------------------------------------
+    # System prompt  (paper Section VII)
+    # ------------------------------------------------------------------
 
-    def __init__(self, config: Optional[OllamaConfig] = None):
-        self.config = config or OllamaConfig()
+    SYSTEM_PROMPT = (
+        "You are AInux, an expert Linux system administration assistant.\n"
+        "Convert natural language instructions into safe shell commands.\n\n"
+        "STRICT RULES — follow all of them:\n"
+        "1. Output EXACTLY ONE shell command. No explanations, no markdown, "
+        "no backticks, no code fences, no comments.\n"
+        "2. NEVER use && or ; to chain commands. One command only.\n"
+        "3. NEVER add sudo unless the user explicitly says 'as root' or 'with sudo'.\n"
+        "4. NEVER use placeholder paths like /path/to/ or <your-path>. "
+        "Use the exact names from the request.\n"
+        "5. NEVER add echo, verification steps, or output decorators.\n"
+        "6. Use apt-get (not sudo apt-get) for package operations.\n"
+        "7. If the request is ambiguous or unsafe, output exactly: AINUX_CLARIFY\n"
+        "8. Use Linux/Debian commands unless the platform is specified otherwise.\n\n"
+        "Examples of CORRECT output (one command, no extras):\n"
+        "  apt-get install -y nginx\n"
+        "  systemctl reload nginx\n"
+        "  find . -type f -name '*.py'\n\n"
+        "Examples of WRONG output (never produce these):\n"
+        "  sudo apt-get update && sudo apt-get install nginx   <- two commands\n"
+        "  sudo systemctl start nginx                          <- unnecessary sudo\n"
+        "  source /path/to/venv/bin/activate                  <- placeholder path\n"
+    )
+
+    def __init__(self, config: Optional[LLMRuntimeConfig] = None):
+        self.config = config or LLMRuntimeConfig()
         self.available = False
         self._check_availability()
 
@@ -132,7 +141,7 @@ class LocalLLMRuntime:
     # ------------------------------------------------------------------
 
     def _check_availability(self) -> None:
-        """Check LM Studio is running and has a model loaded."""
+        """Check that the LLM endpoint is running and has a model loaded."""
         try:
             resp = requests.get(
                 f"{self.config.host}/v1/models",
@@ -142,9 +151,9 @@ class LocalLLMRuntime:
                 models = [m["id"] for m in resp.json().get("data", [])]
                 if not models:
                     print(
-                        f"[AInux LLM] LM Studio is running at {self.config.host} "
+                        f"[AInux LLM] Endpoint running at {self.config.host} "
                         "but no model is loaded.\n"
-                        "            Load a model in LM Studio → Local Server tab."
+                        "            Load a model and restart the server."
                     )
                     return
                 self.available = True
@@ -155,22 +164,20 @@ class LocalLLMRuntime:
                         f"not found. Available: {models}\n"
                         f"            Using first loaded model: {models[0]}"
                     )
-                    # Use whatever is loaded rather than failing
                     self.config.model = models[0]
                 else:
                     print(
-                        f"[AInux LLM] Connected to LM Studio — model: {self.config.model}"
+                        f"[AInux LLM] Connected — model: {self.config.model}"
                     )
             else:
                 print(
-                    f"[AInux LLM] LM Studio at {self.config.host} responded "
+                    f"[AInux LLM] Endpoint at {self.config.host} responded "
                     f"with status {resp.status_code}"
                 )
         except requests.ConnectionError:
             print(
-                f"[AInux LLM] LM Studio not reachable at {self.config.host}.\n"
-                "            Open LM Studio → Local Server tab → Start Server.\n"
-                f"            Then pass --host {self.config.host} --model <model-id>"
+                f"[AInux LLM] Endpoint not reachable at {self.config.host}.\n"
+                "            Start your LLM server and pass --host <url> --model <id>."
             )
         except Exception as e:
             print(f"[AInux LLM] Availability check failed: {e}")
@@ -179,7 +186,7 @@ class LocalLLMRuntime:
         return self.available
 
     # ------------------------------------------------------------------
-    # Command generation (single command)
+    # Command generation — two-pass strategy (paper Section VII)
     # ------------------------------------------------------------------
 
     def generate_command(
@@ -190,6 +197,13 @@ class LocalLLMRuntime:
     ) -> Optional[str]:
         """
         Convert natural language to a single shell command.
+
+        Two-pass strategy (paper Section VII):
+          Pass 1: temperature=0.1 (near-deterministic)
+          Pass 2: temperature=0.3, triggered only when pass 1 produces a
+                  compound command; the post-processing sanitiser is also
+                  applied as a final fallback.
+
         Returns the command string, or None on failure.
         """
         if not self.available:
@@ -199,11 +213,33 @@ class LocalLLMRuntime:
 
         for attempt in range(self.config.max_retries):
             try:
-                response = self._call_llm(prompt)
-                if response:
-                    command = self._extract_command(response)
-                    if command:
-                        return command
+                # --- Pass 1: temperature 0.1 ---
+                response = self._call_llm(prompt, temperature=0.1)
+                if not response:
+                    continue
+
+                command = self._extract_command(response)
+                if not command:
+                    continue
+
+                # Compound-command check: if && or ; present, trigger pass 2
+                if self._is_compound_command(command):
+                    # --- Pass 2: temperature 0.3 ---
+                    response2 = self._call_llm(prompt, temperature=0.3)
+                    if response2:
+                        command2 = self._extract_command(response2)
+                        if command2 and not self._is_compound_command(command2):
+                            return command2
+
+                    # Post-processing sanitiser: extract first sub-command
+                    sanitised = self._sanitize_compound(command)
+                    if sanitised:
+                        return sanitised
+                    # Both passes produced compounds — skip this attempt
+                    continue
+
+                return command
+
             except Exception as e:
                 print(f"[AInux LLM] Attempt {attempt + 1} failed: {e}")
                 if attempt < self.config.max_retries - 1:
@@ -273,18 +309,16 @@ class LocalLLMRuntime:
     # Core API call
     # ------------------------------------------------------------------
 
-    def _call_llm(self, prompt: str) -> Optional[str]:
+    def _call_llm(self, prompt: str, temperature: Optional[float] = None) -> Optional[str]:
         """
         Call any Chat Completion API-compliant endpoint.
-        Works with any provider implementing /v1/chat/completions standard.
-        
-        Examples:
-          - LM Studio (local, http://127.0.0.1:1234)
-          - Ollama (local, http://127.0.0.1:11434)
-          - Vllm (local, http://127.0.0.1:8000)
-          - OpenAI, Anthropic, Azure (cloud, requires auth keys)
-          - Self-hosted LLaMA, Mistral, etc.
+
+        Accepts an optional temperature override; defaults to self.config.temperature.
+        Works with any provider implementing /v1/chat/completions:
+          LM Studio, Ollama, Vllm, OpenAI, Azure OpenAI, Anthropic (via proxy).
         """
+        effective_temperature = temperature if temperature is not None else self.config.temperature
+
         payload = {
             "model": self.config.model,
             "messages": [
@@ -292,7 +326,7 @@ class LocalLLMRuntime:
                 {"role": "user",   "content": prompt},
             ],
             "stream": False,
-            "temperature": self.config.temperature,
+            "temperature": effective_temperature,
             "max_tokens": 256,
         }
 
@@ -309,14 +343,44 @@ class LocalLLMRuntime:
         resp.raise_for_status()
 
         raw_output = resp.json()["choices"][0]["message"]["content"]
-        print(f"[AInux LLM][DEBUG] raw_output={raw_output!r}")
         return raw_output.strip() if raw_output else None
 
-    # Backward compatibility alias
-    # Keep the old name as an alias so any callers that haven't been
-    # updated yet don't break immediately.
+    # Backward-compatibility alias
     def _call_ollama(self, prompt: str) -> Optional[str]:
         return self._call_llm(prompt)
+
+    # ------------------------------------------------------------------
+    # Compound-command detection and sanitisation (paper Section VII)
+    # ------------------------------------------------------------------
+
+    def _is_compound_command(self, command: str) -> bool:
+        """
+        Return True if the command contains && or an unquoted semicolon.
+        Used to trigger the second generation pass.
+        """
+        # Remove quoted sections to avoid false positives on e.g. echo "a && b"
+        stripped = re.sub(r'"[^"]*"', "", command)
+        stripped = re.sub(r"'[^']*'", "", stripped)
+        return bool(re.search(r"&&|(?<!\w);(?!\w)|;\s*$", stripped))
+
+    def _sanitize_compound(self, command: str) -> Optional[str]:
+        """
+        Post-processing sanitiser for compound commands (paper Section VII).
+        Splits on && or ; and returns the first non-empty, non-sudo sub-command.
+        Applied as a last resort when both generation passes produce compounds.
+        """
+        parts = re.split(r"&&|;", command)
+        for part in parts:
+            part = part.strip()
+            # Strip residual sudo prefixes
+            part = re.sub(r"^\s*sudo\s+", "", part).strip()
+            # Skip empty or comment-only parts
+            if part and not part.startswith("#"):
+                # Re-validate: reject placeholder paths
+                if not re.search(r"/path/to/|<[^>]+>|\byour[_/-]|\bexample[_/-]",
+                                  part, re.IGNORECASE):
+                    return part
+        return None
 
     # ------------------------------------------------------------------
     # Prompt construction
@@ -344,6 +408,7 @@ class LocalLLMRuntime:
     # ------------------------------------------------------------------
 
     def _canonicalize_command(self, command: str) -> str:
+        """Normalise common command variants to a canonical form."""
         command = command.strip()
 
         if command.startswith("`") and command.endswith("`"):
@@ -368,7 +433,12 @@ class LocalLLMRuntime:
         return command
 
     def _extract_command(self, raw: str) -> Optional[str]:
-        """Clean LLM output down to a single executable shell command."""
+        """
+        Clean LLM output down to a single executable shell command.
+        Strips markdown fences, decorators, and placeholder paths.
+        Does NOT strip compound operators here — that is handled by the
+        two-pass strategy and _sanitize_compound.
+        """
         if not raw:
             return None
 
@@ -381,7 +451,7 @@ class LocalLLMRuntime:
             command = re.sub(r"^```.*?\n", "", command, flags=re.DOTALL)
             command = re.sub(r"```$", "", command).strip()
 
-        # Bail on clarification
+        # Bail on clarification token
         if "AINUX_CLARIFY" in command:
             return None
 
@@ -396,7 +466,7 @@ class LocalLLMRuntime:
         if command.startswith("`") and command.endswith("`"):
             command = command[1:-1].strip()
 
-        # Strip common shell decorators
+        # Strip common shell prompt decorators
         for prefix in ["$ ", "# ", "> ", "bash: ", "sh: "]:
             if command.lower().startswith(prefix):
                 command = command[len(prefix):].strip()
@@ -404,9 +474,12 @@ class LocalLLMRuntime:
         # Strip trailing semicolons
         command = command.rstrip(";").strip()
 
+        # Strip residual sudo prefix (system prompt prohibits it, but sanitise defensively)
+        command = re.sub(r"^\s*sudo\s+", "", command).strip()
+
         command = self._canonicalize_command(command)
 
-        # Reject placeholder paths — the model invented something
+        # Reject placeholder paths — the model invented a non-existent path
         placeholder_patterns = [
             r"/path/to/",
             r"<[^>]+>",
@@ -422,7 +495,7 @@ class LocalLLMRuntime:
         return command
 
     def _regex_fallback(self, text: str) -> Optional[str]:
-        """Minimal fallback when LM Studio is unavailable or generation fails."""
+        """Minimal fallback when the LLM endpoint is unavailable or generation fails."""
         lower = text.lower()
         if re.search(r"list.*files|show.*files?\b", lower):
             return "ls -la"
@@ -444,7 +517,6 @@ class LocalLLMRuntime:
         for line in raw.strip().splitlines():
             line = re.sub(r"^\s*\d+[.)]\s*", "", line).strip()
             line = re.sub(r"^[-*•]\s*", "", line).strip()
-            # Strip inline backticks
             if line.startswith("`") and line.endswith("`"):
                 line = line[1:-1].strip()
             if line and not line.startswith("#") and len(line) > 1:

@@ -21,9 +21,9 @@ Three agents implemented:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -37,6 +37,7 @@ from .ainux_safety import ConfirmationLevel, MDPSafetyChecker, ValidationResult
 from .ainux_llm_runtime import LocalLLMRuntime, OllamaConfig
 
 logger = logging.getLogger("ainux.agents")
+
 
 # ---------------------------------------------------------------------------
 # Shared data types
@@ -58,7 +59,7 @@ class Checkpoint:
     """Snapshot taken before a risky command for rollback purposes."""
     timestamp: float
     command: str
-    backup_paths: List[str] = field(default_factory=list)   # copied files
+    backup_paths: List[str] = field(default_factory=list)
     snapshot_dir: Optional[str] = None
 
 
@@ -195,12 +196,12 @@ class BaseAgent(ABC):
             result = subprocess.run(
                 command, shell=True,
                 capture_output=True, text=True,
-                timeout=60, cwd=os.getcwd()
+                timeout=60, cwd=os.getcwd(),
             )
             return {
-                "success": result.returncode == 0,
-                "output": result.stdout.strip(),
-                "error":  result.stderr.strip(),
+                "success":     result.returncode == 0,
+                "output":      result.stdout.strip(),
+                "error":       result.stderr.strip(),
                 "return_code": result.returncode,
             }
         except subprocess.TimeoutExpired:
@@ -216,9 +217,10 @@ class BaseAgent(ABC):
         """Create a lightweight checkpoint before executing a command."""
         checkpoint = Checkpoint(timestamp=time.time(), command=command)
 
-        # Back up any files that look like they'll be modified
-        import re
-        file_args = re.findall(r"(?:^|\s)(/[^\s]+|\./[^\s]+|[A-Za-z0-9_./]+\.[a-z]+)", command)
+        file_args = re.findall(
+            r"(?:^|\s)(/[^\s]+|\./[^\s]+|[A-Za-z0-9_./]+\.[a-z]+)",
+            command,
+        )
         for path in file_args:
             p = Path(path)
             if p.is_file():
@@ -254,11 +256,11 @@ class BaseAgent(ABC):
         return restored > 0
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Summarisation
     # ------------------------------------------------------------------
 
     def _summarize(self, intent: str, commands: List[str], output: str) -> str:
-        """Ask LLM to summarise what was done."""
+        """Ask LLM to summarise what was accomplished."""
         if not self.llm.is_available():
             return f"Completed {len(commands)} step(s) for: {intent}"
         prompt = (
@@ -268,7 +270,8 @@ class BaseAgent(ABC):
             f"Output snippet: {output[:300]}"
         )
         try:
-            response = self.llm._call_ollama(prompt)
+            # Use _call_llm (LM Studio OpenAI-compatible endpoint)
+            response = self.llm._call_llm(prompt)
             return response.strip() if response else f"Completed: {intent}"
         except Exception:
             return f"Completed {len(commands)} step(s) for: {intent}"
@@ -312,7 +315,8 @@ class PackageManagementAgent(BaseAgent):
                 context=context or "none",
             )
             try:
-                response = self.llm._call_ollama(prompt)
+                # _call_llm uses LM Studio /v1/chat/completions
+                response = self.llm._call_llm(prompt)
                 if response:
                     plan = self.llm._extract_plan(response, max_steps=10)
                     if plan:
@@ -320,17 +324,16 @@ class PackageManagementAgent(BaseAgent):
             except Exception as e:
                 logger.warning(f"LLM plan generation failed: {e}")
 
-        # Regex fallback for common patterns
+        # Regex fallback
         return self._regex_plan(intent)
 
     def _regex_plan(self, intent: str) -> List[str]:
-        import re
         lower = intent.lower()
 
-        if re.search(r"install\s+(\S+)", lower):
-            m = re.search(r"install\s+(\S+)", lower)
+        m = re.search(r"install\s+(\S+)", lower)
+        if m:
             pkg = m.group(1)
-            if re.search(r"\.txt$", pkg):            # pip -r requirements.txt
+            if re.search(r"\.txt$", pkg):
                 return [f"pip install -r {pkg}"]
             if re.search(r"\bpip\b", lower):
                 return [f"pip install {pkg}"]
@@ -369,7 +372,8 @@ class FileOperationsAgent(BaseAgent):
                 f"Commands:"
             )
             try:
-                response = self.llm._call_ollama(prompt)
+                # _call_llm uses LM Studio /v1/chat/completions
+                response = self.llm._call_llm(prompt)
                 if response:
                     plan = self.llm._extract_plan(response, max_steps=12)
                     if plan:
@@ -380,10 +384,9 @@ class FileOperationsAgent(BaseAgent):
         return self._regex_plan(intent)
 
     def _regex_plan(self, intent: str) -> List[str]:
-        import re
         lower = intent.lower()
 
-        # Hierarchical path construction (paper feature)
+        # Hierarchical path construction (paper Sec IV.B.1)
         m = re.search(r"create\s+(?:director(?:y|ies)|folder)\s+(.+)", lower)
         if m:
             path = m.group(1).strip().replace(" ", "/")
@@ -417,24 +420,23 @@ class SystemDiagnosticsAgent(BaseAgent):
     """
 
     DIAGNOSTIC_COMMANDS = {
-        "cpu":      ["top -bn1 | head -20", "mpstat 1 1"],
-        "memory":   ["free -h", "vmstat -s | head -10"],
-        "disk":     ["df -h", "du -sh /* 2>/dev/null | sort -rh | head -10"],
-        "network":  ["ss -tuln", "netstat -s 2>/dev/null | head -20"],
-        "logs":     ["journalctl -n 50 --no-pager", "dmesg | tail -20"],
-        "processes":["ps aux --sort=-%cpu | head -15"],
-        "services": ["systemctl --type=service --state=running --no-pager"],
-        "general":  ["uname -a", "uptime", "free -h", "df -h"],
+        "cpu":       ["top -bn1 | head -20", "mpstat 1 1"],
+        "memory":    ["free -h", "vmstat -s | head -10"],
+        "disk":      ["df -h", "du -sh /* 2>/dev/null | sort -rh | head -10"],
+        "network":   ["ss -tuln", "netstat -s 2>/dev/null | head -20"],
+        "logs":      ["journalctl -n 50 --no-pager", "dmesg | tail -20"],
+        "processes": ["ps aux --sort=-%cpu | head -15"],
+        "services":  ["systemctl --type=service --state=running --no-pager"],
+        "general":   ["uname -a", "uptime", "free -h", "df -h"],
     }
 
     def domain(self) -> str:
         return "SystemDiagnostics"
 
     def _generate_plan(self, intent: str, context: Optional[str]) -> List[str]:
-        import re
         lower = intent.lower()
 
-        # Map keywords to diagnostic categories
+        # Keyword → diagnostic category shortcut
         for category, commands in self.DIAGNOSTIC_COMMANDS.items():
             if re.search(category, lower):
                 return commands
@@ -449,12 +451,13 @@ class SystemDiagnosticsAgent(BaseAgent):
                 f"Commands:"
             )
             try:
-                response = self.llm._call_ollama(prompt)
+                # _call_llm uses LM Studio /v1/chat/completions
+                response = self.llm._call_llm(prompt)
                 if response:
                     plan = self.llm._extract_plan(response, max_steps=8)
                     if plan:
-                        # Safety gate: ensure all are classified SAFE
-                        from ainux_safety import classify_action, ActionClass
+                        # Safety gate: keep only SAFE-classified commands
+                        from .ainux_safety import classify_action, ActionClass
                         safe_plan = [
                             c for c in plan
                             if classify_action(c) == ActionClass.SAFE
@@ -477,15 +480,21 @@ class AgentDispatcher:
     """
 
     INTENT_PATTERNS = {
-        "package":     [r"\binstall\b", r"\bupgrade\b", r"\bupdate\b",
-                        r"\bapt\b", r"\bpip\b", r"\bnpm\b", r"\bremove package\b"],
-        "file":        [r"\bfile\b", r"\bfolder\b", r"\bdirector\b",
-                        r"\bcreate\b", r"\brename\b", r"\bcopy\b",
-                        r"\bmove file\b", r"\blist files\b", r"\bfind files\b"],
-        "diagnostics": [r"\bdiagnos\b", r"\bmonitor\b", r"\bhealth\b",
-                        r"\bperformance\b", r"\bcpu\b", r"\bmemory\b",
-                        r"\bdisk\b", r"\blogs?\b", r"\bprocesses\b",
-                        r"\bnetwork stat\b", r"\bservices\b"],
+        "package": [
+            r"\binstall\b", r"\bupgrade\b", r"\bupdate\b",
+            r"\bapt\b", r"\bpip\b", r"\bnpm\b", r"\bremove package\b",
+        ],
+        "file": [
+            r"\bfile\b", r"\bfolder\b", r"\bdirector\b",
+            r"\bcreate\b", r"\brename\b", r"\bcopy\b",
+            r"\bmove file\b", r"\blist files\b", r"\bfind files\b",
+        ],
+        "diagnostics": [
+            r"\bdiagnos\b", r"\bmonitor\b", r"\bhealth\b",
+            r"\bperformance\b", r"\bcpu\b", r"\bmemory\b",
+            r"\bdisk\b", r"\blogs?\b", r"\bprocesses\b",
+            r"\bnetwork stat\b", r"\bservices\b",
+        ],
     }
 
     def __init__(self, llm: LocalLLMRuntime, safety: MDPSafetyChecker):
@@ -502,9 +511,8 @@ class AgentDispatcher:
         confirm_callback=None,
     ) -> Tuple[str, AgentResult]:
         """
-        Route to best agent. Returns (agent_name, AgentResult).
+        Route to best-matching agent. Returns (agent_name, AgentResult).
         """
-        import re
         lower = intent.lower()
 
         scores: Dict[str, int] = {k: 0 for k in self.INTENT_PATTERNS}
@@ -515,8 +523,7 @@ class AgentDispatcher:
 
         best = max(scores, key=lambda k: scores[k])
         if scores[best] == 0:
-            # Default to file operations for unrecognised intents
-            best = "file"
+            best = "file"   # default for unrecognised intents
 
         agent = self.agents[best]
         result = agent.run(intent, context=context, confirm_callback=confirm_callback)

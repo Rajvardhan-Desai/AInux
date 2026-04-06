@@ -53,7 +53,7 @@ class AIShell:
 
     def __init__(
         self,
-        model: str = "phi3:mini",
+        model: str = "openai/gpt-oss-20b", 
         ollama_host: str = DEFAULT_OLLAMA_HOST,
         persist_memory: bool = True,
     ):
@@ -389,8 +389,7 @@ class AIShell:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AInux — AI-Native Linux Shell")
-    parser.add_argument("--model",  default="phi3:mini",
-                        help="Ollama model name (default: phi3:mini)")
+    parser.add_argument("--model", default="gpt-oss-20b-MXFP4")
     parser.add_argument("--host",   default=DEFAULT_OLLAMA_HOST,
                         help="Ollama server URL")
     parser.add_argument("--voice",  action="store_true",

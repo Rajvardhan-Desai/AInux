@@ -1,12 +1,18 @@
 """
 AInux Local LLM Runtime
-Replaces the Gemini cloud API with a local Ollama inference engine.
+Targets LM Studio's OpenAI-compatible local server (default port 1234).
 
-Supports: Ollama (primary), with llama.cpp-compatible fallback.
-Recommended models for 8GB RAM:
-  - phi3:mini      (~2.3 GB)   fastest
-  - llama3.2:3b    (~2.0 GB)   good balance
-  - mistral:7b-q4  (~4.1 GB)   best quality, fits in 8GB
+Supports any GGUF model loaded in LM Studio.
+Recommended models:
+  - gpt-oss-20b-MXFP4   (20B, strong quality)
+  - phi3:mini            (~2.3 GB, fast)
+  - llama3.2:3b          (~2.0 GB, good balance)
+  - mistral:7b-q4        (~4.1 GB, best quality)
+
+LM Studio setup:
+  1. Open LM Studio and load your model.
+  2. Go to Local Server tab → Start Server (default port 1234).
+  3. Pass --host http://127.0.0.1:1234 --model <model-id>
 
 Implements KV-cache awareness and dynamic batching described in paper Sec III.C.
 """
@@ -28,9 +34,10 @@ import requests
 # ---------------------------------------------------------------------------
 
 DEFAULT_OLLAMA_HOST = (
-    os.getenv("AINUX_OLLAMA_HOST")
+    os.getenv("AINUX_LM_HOST")
+    or os.getenv("AINUX_OLLAMA_HOST")   # legacy env var honoured
     or os.getenv("OLLAMA_HOST")
-    or "http://127.0.0.1:12345"
+    or "http://127.0.0.1:1234"          # LM Studio default port
 )
 
 
@@ -42,15 +49,15 @@ def normalize_ollama_host(host: str) -> str:
         return f"http://{host}"
     return host
 
+
 @dataclass
 class OllamaConfig:
     host: str = field(default_factory=lambda: DEFAULT_OLLAMA_HOST)
-    model: str   = "phi3:mini"          # fits comfortably in 8GB
+    model: str = "gpt-oss-20b-MXFP4"
     temperature: float = 0.1            # low = deterministic commands
-    timeout: int = 60
+    timeout: int = 120                  # LM Studio needs more headroom than Ollama
     max_retries: int = 3
     context_window: int = 4096
-    # Quantization hint for paper metrics (actual quantization is done by Ollama)
     quantization_bits: int = 4
 
     def __post_init__(self) -> None:
@@ -63,33 +70,43 @@ class OllamaConfig:
 
 class LocalLLMRuntime:
     """
-    Manages local LLM inference via Ollama.
+    Manages local LLM inference via LM Studio's OpenAI-compatible API.
 
     Implements the inference optimisation described in the paper:
       T_inf = T_prompt + N_tokens * T_decode      (Eq. 4)
 
-    KV-cache is handled automatically by Ollama when the same system
-    prompt prefix is reused across calls (context reuse).
+    All HTTP calls go through _call_llm() which posts to
+    /v1/chat/completions — the standard OpenAI chat format that
+    LM Studio exposes on its local server.
     """
 
     SYSTEM_PROMPT = (
-        "You are AInux, an expert system administration assistant. "
-        "Convert natural language instructions into safe shell commands. "
-        "Rules:\n"
-        "1. Output ONLY the shell command — no explanation, no markdown, no backticks, no code fences.\n"
-        "2. Never output dangerous commands (rm -rf /, format, shutdown, etc.).\n"
-        "3. If the request is ambiguous or unsafe, output: AINUX_CLARIFY\n"
-        "4. Prefer a single canonical shell command. Only use && or ; if the user explicitly asks for multiple actions or one command is impossible.\n"
-        "5. Use commands appropriate for Linux/Debian unless told otherwise.\n"
-        "6. Preserve literal filenames, directories, ports, and package names from the request. Never invent placeholder paths like /path/to/...\n"
-        "7. Do not add sudo, apt-get update, cd, echo, comments, or verification steps unless the user explicitly asks for them.\n"
-        "8. Prefer canonical forms such as ls -la, find . -name '*.py' -type f, df -h, git init, which python, and git log --oneline -5.\n"
-    )
+    "You are AInux, an expert Linux system administration assistant.\n"
+    "Convert natural language instructions into safe shell commands.\n\n"
+    "STRICT RULES — follow all of them:\n"
+    "1. Output EXACTLY ONE shell command. No explanations, no markdown, "
+       "no backticks, no code fences, no comments.\n"
+    "2. NEVER use && or ; to chain commands. One command only.\n"
+    "3. NEVER add sudo unless the user explicitly says 'as root' or 'with sudo'.\n"
+    "4. NEVER use placeholder paths like /path/to/ or <your-path>. "
+       "Use the exact names from the request.\n"
+    "5. NEVER add echo, verification steps, or output decorators.\n"
+    "6. Use apt-get (not sudo apt-get) for package operations.\n"
+    "7. If the request is ambiguous or unsafe, output: AINUX_CLARIFY\n"
+    "8. Use Linux/Debian commands unless told otherwise.\n\n"
+    "Examples of CORRECT output:\n"
+    "  apt-get install -y nginx\n"
+    "  systemctl reload nginx\n"
+    "  find . -type f -name '*.py'\n\n"
+    "Examples of WRONG output (never do these):\n"
+    "  sudo apt-get update && sudo apt-get install nginx   ← two commands\n"
+    "  sudo systemctl start nginx                          ← unnecessary sudo\n"
+    "  source /path/to/venv/bin/activate                  ← placeholder path\n"
+)
 
     def __init__(self, config: Optional[OllamaConfig] = None):
         self.config = config or OllamaConfig()
         self.available = False
-        self._context_cache: Optional[List[int]] = None  # KV-cache token ids
         self._check_availability()
 
     # ------------------------------------------------------------------
@@ -97,32 +114,45 @@ class LocalLLMRuntime:
     # ------------------------------------------------------------------
 
     def _check_availability(self) -> None:
+        """Check LM Studio is running and has a model loaded."""
         try:
             resp = requests.get(
-                f"{self.config.host}/api/tags",
-                timeout=5
+                f"{self.config.host}/v1/models",
+                timeout=5,
             )
             if resp.status_code == 200:
-                models = [m["name"] for m in resp.json().get("models", [])]
-                self.available = True
-                if not any(self.config.model in m for m in models):
+                models = [m["id"] for m in resp.json().get("data", [])]
+                if not models:
                     print(
-                        f"[AInux LLM] Model '{self.config.model}' not found locally. "
-                        f"Run: ollama pull {self.config.model}"
+                        f"[AInux LLM] LM Studio is running at {self.config.host} "
+                        "but no model is loaded.\n"
+                        "            Load a model in LM Studio → Local Server tab."
                     )
-                    print(f"[AInux LLM] Available: {models}")
+                    return
+                self.available = True
+                matched = any(self.config.model.lower() in m.lower() for m in models)
+                if not matched:
+                    print(
+                        f"[AInux LLM] WARNING: requested model '{self.config.model}' "
+                        f"not found. Available: {models}\n"
+                        f"            Using first loaded model: {models[0]}"
+                    )
+                    # Use whatever is loaded rather than failing
+                    self.config.model = models[0]
                 else:
-                    print(f"[AInux LLM] Connected to Ollama — model: {self.config.model}")
+                    print(
+                        f"[AInux LLM] Connected to LM Studio — model: {self.config.model}"
+                    )
             else:
                 print(
-                    f"[AInux LLM] Ollama at {self.config.host} responded with "
-                    f"status {resp.status_code}"
+                    f"[AInux LLM] LM Studio at {self.config.host} responded "
+                    f"with status {resp.status_code}"
                 )
         except requests.ConnectionError:
             print(
-                f"[AInux LLM] Ollama not reachable at {self.config.host}. "
-                "Start it with: ollama serve\n"
-                f"[AInux LLM] Then pull a model: ollama pull {self.config.model}"
+                f"[AInux LLM] LM Studio not reachable at {self.config.host}.\n"
+                "            Open LM Studio → Local Server tab → Start Server.\n"
+                f"            Then pass --host {self.config.host} --model <model-id>"
             )
         except Exception as e:
             print(f"[AInux LLM] Availability check failed: {e}")
@@ -131,7 +161,7 @@ class LocalLLMRuntime:
         return self.available
 
     # ------------------------------------------------------------------
-    # Command generation
+    # Command generation (single command)
     # ------------------------------------------------------------------
 
     def generate_command(
@@ -141,7 +171,7 @@ class LocalLLMRuntime:
         platform: str = "linux",
     ) -> Optional[str]:
         """
-        Convert natural language to a shell command.
+        Convert natural language to a single shell command.
         Returns the command string, or None on failure.
         """
         if not self.available:
@@ -151,21 +181,21 @@ class LocalLLMRuntime:
 
         for attempt in range(self.config.max_retries):
             try:
-                t0 = time.time()
-                response = self._call_ollama(prompt)
-                t_inf = time.time() - t0
-
+                response = self._call_llm(prompt)
                 if response:
                     command = self._extract_command(response)
                     if command:
                         return command
-
             except Exception as e:
                 print(f"[AInux LLM] Attempt {attempt + 1} failed: {e}")
                 if attempt < self.config.max_retries - 1:
                     time.sleep(1)
 
         return self._regex_fallback(user_input)
+
+    # ------------------------------------------------------------------
+    # Plan generation (multi-step)
+    # ------------------------------------------------------------------
 
     def generate_plan(
         self,
@@ -175,7 +205,7 @@ class LocalLLMRuntime:
     ) -> List[str]:
         """
         Generate a multi-step command plan for complex tasks.
-        Returns a list of shell commands (ordered).
+        Returns an ordered list of shell commands.
         """
         if not self.available:
             return []
@@ -192,7 +222,7 @@ class LocalLLMRuntime:
 
         for attempt in range(self.config.max_retries):
             try:
-                response = self._call_ollama(plan_prompt)
+                response = self._call_llm(plan_prompt)
                 if response:
                     return self._extract_plan(response, max_steps)
             except Exception as e:
@@ -202,8 +232,12 @@ class LocalLLMRuntime:
 
         return []
 
+    # ------------------------------------------------------------------
+    # Command explanation (for confirmation prompts)
+    # ------------------------------------------------------------------
+
     def explain_command(self, command: str) -> str:
-        """Generate a natural language explanation of a command (for user confirmation prompts)."""
+        """Generate a one-sentence explanation of what a command does."""
         if not self.available:
             return f"Execute: {command}"
 
@@ -212,46 +246,58 @@ class LocalLLMRuntime:
             f"focusing on its effect on the system:\n{command}"
         )
         try:
-            response = self._call_ollama(prompt)
+            response = self._call_llm(prompt)
             return response.strip() if response else f"Execute: {command}"
         except Exception:
             return f"Execute: {command}"
 
     # ------------------------------------------------------------------
-    # Internal Ollama API call
+    # Core LM Studio API call
     # ------------------------------------------------------------------
 
-    def _call_ollama(self, prompt: str) -> Optional[str]:
+    def _call_llm(self, prompt: str) -> Optional[str]:
         """
-        POST to Ollama /api/generate (non-streaming).
-        Uses the shared system prompt for KV-cache reuse.
+        POST to LM Studio /v1/chat/completions (OpenAI-compatible).
+        Uses the shared SYSTEM_PROMPT as the system message so the model
+        maintains consistent behaviour across calls.
         """
         payload = {
             "model": self.config.model,
-            "system": self.SYSTEM_PROMPT,
-            "prompt": prompt,
+            "messages": [
+                {"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "user",   "content": prompt},
+            ],
             "stream": False,
-            "options": {
-                "temperature": self.config.temperature,
-                "num_ctx": self.config.context_window,
-            },
+            "temperature": self.config.temperature,
+            "max_tokens": 256,
         }
 
         resp = requests.post(
-            f"{self.config.host}/api/generate",
+            f"{self.config.host}/v1/chat/completions",
             json=payload,
             timeout=self.config.timeout,
         )
         resp.raise_for_status()
-        raw_output = resp.json().get("response", "")
+
+        raw_output = resp.json()["choices"][0]["message"]["content"]
         print(f"[AInux LLM][DEBUG] raw_output={raw_output!r}")
-        return raw_output.strip()
+        return raw_output.strip() if raw_output else None
+
+    # Keep the old name as an alias so any callers that haven't been
+    # updated yet don't break immediately.
+    def _call_ollama(self, prompt: str) -> Optional[str]:
+        return self._call_llm(prompt)
 
     # ------------------------------------------------------------------
-    # Response parsing
+    # Prompt construction
     # ------------------------------------------------------------------
 
-    def _build_prompt(self, user_input: str, context: Optional[str], platform: str) -> str:
+    def _build_prompt(
+        self,
+        user_input: str,
+        context: Optional[str],
+        platform: str,
+    ) -> str:
         parts = []
         if context:
             parts.append(f"Recent context:\n{context}\n")
@@ -263,19 +309,26 @@ class LocalLLMRuntime:
         )
         return "\n".join(parts)
 
+    # ------------------------------------------------------------------
+    # Response parsing
+    # ------------------------------------------------------------------
+
     def _canonicalize_command(self, command: str) -> str:
         command = command.strip()
 
         if command.startswith("`") and command.endswith("`"):
             command = command[1:-1].strip()
 
+        # Normalise find flag order
         match = re.fullmatch(r"find \. -type f -name (.+)", command)
         if match:
             return f"find . -name {match.group(1)} -type f"
 
+        # Normalise ip shorthand
         if command == "ip a":
             return "ip addr"
 
+        # Normalise git log format variants
         if command in {
             'git log -5 --pretty=format:"%h %s"',
             "git log -5 --pretty=format:'%h %s'",
@@ -285,47 +338,52 @@ class LocalLLMRuntime:
         return command
 
     def _extract_command(self, raw: str) -> Optional[str]:
-        """Clean up LLM output to a single shell command."""
+        """Clean LLM output down to a single executable shell command."""
         if not raw:
             return None
 
         command = raw.strip()
 
-        # Strip markdown code fences (single-line and multi-line)
-        # Example: ```bash\nls -la\n``` or ```bash ls -la ```
+        # Strip triple-backtick code fences
         command = re.sub(r"^```[a-zA-Z0-9_-]*\s*\n?", "", command)
         command = re.sub(r"\n?```$", "", command).strip()
         if command.startswith("```") and "```" in command[3:]:
             command = re.sub(r"^```.*?\n", "", command, flags=re.DOTALL)
             command = re.sub(r"```$", "", command).strip()
 
-        # Bail on clarification requests
+        # Bail on clarification
         if "AINUX_CLARIFY" in command:
             return None
 
-        # Take only first line if multiline (single-command mode)
-        command = command.split("\n")[0].strip()
+        # Take first non-empty line only (single-command mode)
+        for line in command.splitlines():
+            line = line.strip()
+            if line:
+                command = line
+                break
 
+        # Strip inline backticks
         if command.startswith("`") and command.endswith("`"):
             command = command[1:-1].strip()
 
-        # Strip common decorators
-        for prefix in ["$", "#", ">", "bash:", "sh:"]:
+        # Strip common shell decorators
+        for prefix in ["$ ", "# ", "> ", "bash: ", "sh: "]:
             if command.lower().startswith(prefix):
                 command = command[len(prefix):].strip()
 
-        # Strip trailing semicolons left by the model on single commands
+        # Strip trailing semicolons
         command = command.rstrip(";").strip()
 
         command = self._canonicalize_command(command)
 
+        # Reject placeholder paths — the model invented something
         placeholder_patterns = [
             r"/path/to/",
             r"<[^>]+>",
             r"\byour[_/-]",
             r"\bexample[_/-]",
         ]
-        if any(re.search(pattern, command, flags=re.IGNORECASE) for pattern in placeholder_patterns):
+        if any(re.search(p, command, re.IGNORECASE) for p in placeholder_patterns):
             return None
 
         if not command or len(command) > 500:
@@ -334,30 +392,31 @@ class LocalLLMRuntime:
         return command
 
     def _regex_fallback(self, text: str) -> Optional[str]:
-        """Minimal fallback when Ollama is unavailable or generation fails."""
+        """Minimal fallback when LM Studio is unavailable or generation fails."""
         lower = text.lower()
-        if re.search(r"list.*files|show.*files|ls", lower):
+        if re.search(r"list.*files|show.*files?\b", lower):
             return "ls -la"
-        if re.search(r"current.*dir|where.*am|pwd", lower):
+        if re.search(r"current.*dir|where.*am\b|pwd", lower):
             return "pwd"
         if re.search(r"disk.*space|disk.*usage", lower):
             return "df -h"
-        if re.search(r"memory", lower):
+        if re.search(r"\bmemory\b", lower):
             return "free -h"
-        if re.search(r"processes", lower):
+        if re.search(r"\bprocesses\b", lower):
             return "ps aux"
-        if re.search(r"uptime", lower):
+        if re.search(r"\buptime\b", lower):
             return "uptime"
         return None
 
     def _extract_plan(self, raw: str, max_steps: int) -> List[str]:
-        """Parse a numbered list of commands from plan response."""
-        import re
+        """Parse a numbered or bulleted list of commands from a plan response."""
         commands = []
-        for line in raw.strip().split("\n"):
-            # Strip leading numbers/bullets
-            line = re.sub(r"^\s*[\d]+[.)]\s*", "", line).strip()
+        for line in raw.strip().splitlines():
+            line = re.sub(r"^\s*\d+[.)]\s*", "", line).strip()
             line = re.sub(r"^[-*•]\s*", "", line).strip()
+            # Strip inline backticks
+            if line.startswith("`") and line.endswith("`"):
+                line = line[1:-1].strip()
             if line and not line.startswith("#") and len(line) > 1:
                 commands.append(line)
             if len(commands) >= max_steps:

@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .ainux_safety import ConfirmationLevel, MDPSafetyChecker, ValidationResult
-from .ainux_llm_runtime import LocalLLMRuntime, OllamaConfig
+from .ainux_llm_runtime import LocalLLMRuntime
 
 logger = logging.getLogger("ainux.agents")
 
@@ -270,7 +270,7 @@ class BaseAgent(ABC):
             f"Output snippet: {output[:300]}"
         )
         try:
-            # Use _call_llm (LM Studio OpenAI-compatible endpoint)
+            # Use _call_llm (Chat Completion API endpoint)
             response = self.llm._call_llm(prompt)
             return response.strip() if response else f"Completed: {intent}"
         except Exception:

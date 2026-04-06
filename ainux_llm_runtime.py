@@ -1,20 +1,23 @@
 """
-AInux Local LLM Runtime
-Targets LM Studio's OpenAI-compatible local server (default port 1234).
+AInux Universal LLM Runtime
+Universal adapter implementing the Chat Completion API standard.
 
-Supports any GGUF model loaded in LM Studio.
-Recommended models:
-  - gpt-oss-20b-MXFP4   (20B, strong quality)
-  - phi3:mini            (~2.3 GB, fast)
-  - llama3.2:3b          (~2.0 GB, good balance)
-  - mistral:7b-q4        (~4.1 GB, best quality)
+This standard is implemented by many LLM providers:
+  - LM Studio         (local, port 1234)
+  - Ollama            (local, port 11434)
+  - Vllm              (local, port 8000)
+  - OpenAI            (cloud)
+  - Azure OpenAI      (cloud)
+  - Anthropic Claude  (via proxy)
+  - Any Chat Completion API-compliant service
 
-LM Studio setup:
-  1. Open LM Studio and load your model.
-  2. Go to Local Server tab → Start Server (default port 1234).
-  3. Pass --host http://127.0.0.1:1234 --model <model-id>
+Environment variables:
+  - AINUX_LLM_HOST    (endpoint URL, default: http://127.0.0.1:1234)
+  - AINUX_LLM_API_KEY (optional, for remote/proprietary services)
+  - Legacy: AINUX_OLLAMA_HOST, OLLAMA_HOST (still supported)
 
-Implements KV-cache awareness and dynamic batching described in paper Sec III.C.
+Implements the Chat Completion API standard interface.
+KV-cache awareness and dynamic batching described in paper Sec III.C.
 """
 
 from __future__ import annotations
@@ -33,16 +36,19 @@ import requests
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEFAULT_OLLAMA_HOST = (
-    os.getenv("AINUX_LM_HOST")
-    or os.getenv("AINUX_OLLAMA_HOST")   # legacy env var honoured
+DEFAULT_LLM_HOST = (
+    os.getenv("AINUX_LLM_HOST")
+    or os.getenv("AINUX_OLLAMA_HOST")   # legacy env vars for backward compatibility
     or os.getenv("OLLAMA_HOST")
-    or "http://127.0.0.1:1234"          # LM Studio default port
+    or "http://127.0.0.1:1234"          # LM Studio default (also works with local Ollama/Vllm)
 )
 
+DEFAULT_LLM_API_KEY = os.getenv("AINUX_LLM_API_KEY")
 
-def normalize_ollama_host(host: str) -> str:
-    host = (host or DEFAULT_OLLAMA_HOST).strip()
+
+def normalize_llm_host(host: str) -> str:
+    """Normalize LLM endpoint URL to standard format."""
+    host = (host or DEFAULT_LLM_HOST).strip()
     if host.isdigit():
         return f"http://127.0.0.1:{host}"
     if "://" not in host:
@@ -51,17 +57,25 @@ def normalize_ollama_host(host: str) -> str:
 
 
 @dataclass
-class OllamaConfig:
-    host: str = field(default_factory=lambda: DEFAULT_OLLAMA_HOST)
+class LLMRuntimeConfig:
+    """Configuration for Chat Completion API endpoint."""
+    host: str = field(default_factory=lambda: DEFAULT_LLM_HOST)
     model: str = "gpt-oss-20b-MXFP4"
+    api_key: Optional[str] = field(default_factory=lambda: DEFAULT_LLM_API_KEY)  # For cloud providers requiring auth
     temperature: float = 0.1            # low = deterministic commands
-    timeout: int = 120                  # LM Studio needs more headroom than Ollama
+    timeout: int = 120
     max_retries: int = 3
     context_window: int = 4096
     quantization_bits: int = 4
 
     def __post_init__(self) -> None:
-        self.host = normalize_ollama_host(self.host)
+        self.host = normalize_llm_host(self.host)
+
+
+# Keep backward compatibility aliases
+OllamaConfig = LLMRuntimeConfig
+normalize_ollama_host = normalize_llm_host
+DEFAULT_OLLAMA_HOST = DEFAULT_LLM_HOST
 
 
 # ---------------------------------------------------------------------------
@@ -70,14 +84,18 @@ class OllamaConfig:
 
 class LocalLLMRuntime:
     """
-    Manages local LLM inference via LM Studio's OpenAI-compatible API.
+    Universal LLM runtime adapter using Chat Completion API standard.
+
+    Works with any endpoint implementing the Chat Completion API standard:
+      - Local: LM Studio, Ollama, Vllm, etc.
+      - Cloud: OpenAI, Azure, Anthropic (via proxy), etc.
+      - Self-hosted: LLaMA, Mistral, Falcon servers
 
     Implements the inference optimisation described in the paper:
       T_inf = T_prompt + N_tokens * T_decode      (Eq. 4)
 
-    All HTTP calls go through _call_llm() which posts to
-    /v1/chat/completions — the standard OpenAI chat format that
-    LM Studio exposes on its local server.
+    All HTTP calls use /v1/chat/completions (Chat Completion API standard).
+    This is a widely-adopted open specification, not vendor-specific.
     """
 
     SYSTEM_PROMPT = (
@@ -93,8 +111,8 @@ class LocalLLMRuntime:
     "5. NEVER add echo, verification steps, or output decorators.\n"
     "6. Use apt-get (not sudo apt-get) for package operations.\n"
     "7. If the request is ambiguous or unsafe, output: AINUX_CLARIFY\n"
-    "8. Use Linux/Debian commands unless told otherwise.\n\n"
-    "Examples of CORRECT output:\n"
+    "8. Use Linux/Debian commands unlessLLMRuntimeConfig] = None):
+        self.config = config or LLMRuntime
     "  apt-get install -y nginx\n"
     "  systemctl reload nginx\n"
     "  find . -type f -name '*.py'\n\n"
@@ -252,14 +270,20 @@ class LocalLLMRuntime:
             return f"Execute: {command}"
 
     # ------------------------------------------------------------------
-    # Core LM Studio API call
+    # Core API call
     # ------------------------------------------------------------------
 
     def _call_llm(self, prompt: str) -> Optional[str]:
         """
-        POST to LM Studio /v1/chat/completions (OpenAI-compatible).
-        Uses the shared SYSTEM_PROMPT as the system message so the model
-        maintains consistent behaviour across calls.
+        Call any Chat Completion API-compliant endpoint.
+        Works with any provider implementing /v1/chat/completions standard.
+        
+        Examples:
+          - LM Studio (local, http://127.0.0.1:1234)
+          - Ollama (local, http://127.0.0.1:11434)
+          - Vllm (local, http://127.0.0.1:8000)
+          - OpenAI, Anthropic, Azure (cloud, requires auth keys)
+          - Self-hosted LLaMA, Mistral, etc.
         """
         payload = {
             "model": self.config.model,
@@ -272,9 +296,14 @@ class LocalLLMRuntime:
             "max_tokens": 256,
         }
 
+        headers = {}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+
         resp = requests.post(
             f"{self.config.host}/v1/chat/completions",
             json=payload,
+            headers=headers,
             timeout=self.config.timeout,
         )
         resp.raise_for_status()
@@ -283,6 +312,7 @@ class LocalLLMRuntime:
         print(f"[AInux LLM][DEBUG] raw_output={raw_output!r}")
         return raw_output.strip() if raw_output else None
 
+    # Backward compatibility alias
     # Keep the old name as an alias so any callers that haven't been
     # updated yet don't break immediately.
     def _call_ollama(self, prompt: str) -> Optional[str]:

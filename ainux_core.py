@@ -22,10 +22,10 @@ from typing import Optional
 
 from .ainux_agents import AgentDispatcher
 from .ainux_llm_runtime import (
-    DEFAULT_OLLAMA_HOST,
+    DEFAULT_LLM_HOST,
     LocalLLMRuntime,
-    OllamaConfig,
-    normalize_ollama_host,
+    LLMRuntimeConfig,
+    normalize_llm_host,
 )
 from .ainux_memory import AInuxMemory
 from .ainux_safety import ConfirmationLevel, MDPSafetyChecker
@@ -53,14 +53,14 @@ class AIShell:
 
     def __init__(
         self,
-        model: str = "openai/gpt-oss-20b", 
-        ollama_host: str = DEFAULT_OLLAMA_HOST,
+        model: str = "gpt-oss-20b-MXFP4", 
+        llm_host: str = DEFAULT_LLM_HOST,
         persist_memory: bool = True,
     ):
         print("[AInux] Initialising components...")
 
         # LLM runtime
-        cfg = OllamaConfig(host=normalize_ollama_host(ollama_host), model=model)
+        cfg = LLMRuntimeConfig(host=normalize_llm_host(llm_host), model=model)
         self.llm = LocalLLMRuntime(cfg)
 
         # Memory
@@ -390,8 +390,8 @@ class AIShell:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AInux — AI-Native Linux Shell")
     parser.add_argument("--model", default="gpt-oss-20b-MXFP4")
-    parser.add_argument("--host",   default=DEFAULT_OLLAMA_HOST,
-                        help="Ollama server URL")
+    parser.add_argument("--host",   default=DEFAULT_LLM_HOST,
+                        help="Chat Completion API endpoint (local or cloud)")
     parser.add_argument("--voice",  action="store_true",
                         help="Enable voice input")
     parser.add_argument("--no-persist", action="store_true",
@@ -400,7 +400,7 @@ if __name__ == "__main__":
 
     shell = AIShell(
         model=args.model,
-        ollama_host=normalize_ollama_host(args.host),
+        llm_host=normalize_llm_host(args.host),
         persist_memory=not args.no_persist,
     )
     shell.run_interactive(voice=args.voice)

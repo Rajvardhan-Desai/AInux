@@ -17,9 +17,10 @@ User Input (natural language)
         │                        │
         ▼                        ▼
   LLM Runtime            Agent Dispatcher
-  (Ollama local)         ├── PackageManagementAgent
-        │                ├── FileOperationsAgent
-        ▼                └── SystemDiagnosticsAgent
+  (Chat Completion      ├── PackageManagementAgent
+   API standard)        ├── FileOperationsAgent
+        │                └── SystemDiagnosticsAgent
+        ▼
   MDP Safety Checker
   (validate before execution)
         │
@@ -34,7 +35,7 @@ User Input (natural language)
 | Module | Description |
 |---|---|
 | `ainux_core.py` | Main shell and orchestrator |
-| `ainux_llm_runtime.py` | Local LLM via Ollama (phi3:mini, llama3.2:3b, etc.) |
+| `ainux_llm_runtime.py` | Universal Chat Completion API runtime (works with LM Studio, Ollama, Vllm, and any Chat Completion API-compliant service) |
 | `ainux_memory.py` | FAISS vector store with three-layer memory and decay scoring |
 | `ainux_safety.py` | MDP-based safety verification (Equations 10–11 from paper) |
 | `ainux_agents.py` | Autonomous agents with planner-verifier loops and rollback |
@@ -44,33 +45,57 @@ User Input (natural language)
 ## Requirements
 
 - Python 3.9+
-- [Ollama](https://ollama.com) running locally
-- 8GB RAM minimum (recommended: phi3:mini at 2.3GB)
+- Any Chat Completion API-compliant LLM endpoint (local or cloud)
+- 8GB RAM minimum (for local models)
 
 ---
 
 ## Setup
 
-### 1. Install Ollama and pull a model
+### 1. Configure your Chat Completion API endpoint
+
+**What is Chat Completion API?**
+
+The Chat Completion API is an open standard implemented by many LLM providers. It's not proprietary to OpenAI—it's used by dozens of projects and services.
+
+**Option A: Local (Recommended)**
+
+All of the following implement the Chat Completion API standard on localhost:
+
+- **LM Studio** (easiest for beginners)
+  - Download: https://lmstudio.ai
+  - Load a model → Local Server tab → Start Server (default port 1234)
+  - Models: gpt-oss-20b-MXFP4 (20B, best quality), phi3:mini (2.3GB, fast)
+
+- **Ollama**
+  - Download: https://ollama.com
+  - `ollama serve` (runs on port 11434)
+  - `ollama pull llama3.2:3b`
+
+- **Vllm**
+  - `pip install vllm`
+  - `python -m vllm.entrypoints.openai.api_server --model meta-llama/Llama-2-7b-hf` (port 8000)
+
+**Option B: Cloud & Remote Services**
+
+Set `AINUX_LLM_API_KEY` for services that require authentication:
 
 ```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama serve                    # run in a separate terminal
-ollama pull phi3:mini           # 2.3GB — works on 8GB RAM
+export AINUX_LLM_API_KEY=sk-proj-...
+python -m AInux.ainux_core --host https://api.openai.com/v1 --model gpt-4
 ```
 
-Other supported models (all fit in 8GB RAM):
-```bash
-ollama pull llama3.2:3b         # 2.0GB
-ollama pull mistral:7b-q4       # 4.1GB — best quality
-```
+Other Chat Completion API providers:
+- OpenAI (https://api.openai.com/v1)
+- Azure OpenAI (your-resource.openai.azure.com/v1)
+- Anthropic Claude (via APIrouter or proxy)
+- Others: any service exposing /v1/chat/completions
 
-If Ollama is exposed on a different host or port, set `AINUX_OLLAMA_HOST` or
-`OLLAMA_HOST` before running AInux or the eval harness. Example:
+**Environment variables:**
 
-```bash
-export OLLAMA_HOST=http://127.0.0.1:12345
-```
+- `AINUX_LLM_HOST` — endpoint URL (default: `http://127.0.0.1:1234`)
+- `AINUX_LLM_API_KEY` — auth key for remote/proprietary services
+- Legacy: `AINUX_OLLAMA_HOST`, `OLLAMA_HOST` (still supported)
 
 ### 2. Install Python dependencies
 
@@ -83,11 +108,18 @@ The first run downloads the `all-MiniLM-L6-v2` embedding model (~80MB) automatic
 ### 3. Run AInux
 
 ```bash
-# From the repo root:
+# From the repo root (LLM endpoint must be running):
 python -m AInux.ainux_core
 
 # With a specific model:
-python -m AInux.ainux_core --model llama3.2:3b
+python -m AInux.ainux_core --model "llama3.2:3b"
+
+# With custom LLM endpoint:
+python -m AInux.ainux_core --host http://192.168.1.10:8000
+
+# Cloud provider example (with API key):
+export AINUX_LLM_API_KEY=sk-...
+python -m AInux.ainux_core --host https://api.openai.com/v1 --model "gpt-4"
 
 # With voice input:
 python -m AInux.ainux_core --voice
@@ -151,30 +183,3 @@ Every command and plan is validated before execution using the MDP safety framew
 | DANGEROUS | 0.0 | Hard block, no override |
 
 Plan safety = product of individual command scores. Plans scoring below 0.5 require confirmation.
-
----
-
-## Evaluation
-
-The `eval/` directory contains a full automated evaluation suite comparing AInux against two baselines:
-
-| System | Description |
-|---|---|
-| Traditional CLI | Ground-truth commands typed directly |
-| NaSh baseline | LLM shell with pattern-based safety, no memory/agents |
-| AInux (ours) | Full system: LLM + FAISS memory + MDP safety + agents |
-
-**60 standardised tasks** across 5 categories with ground-truth commands and automated correctness verification. Statistical analysis uses Wilcoxon signed-rank tests with Cohen's d effect sizes and 95% bootstrap confidence intervals.
-
-```bash
-cd eval
-pip install -r requirements_eval.txt
-
-# Run all 60 tasks against all 3 systems
-python eval_harness.py
-
-# Statistical analysis + figures
-python eval_stats.py --results results.json --outdir ../figures/
-```
-
-See [`eval/README.md`](eval/README.md) for full details.
